@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { attune, ConfigError, fromJson, fromWindow } from "./index.js";
+import { attune, ConfigError, fromJson, fromWindow, merge } from "./index.js";
 
 const schema = z.object({
   API_URL: z.string(),
@@ -126,6 +126,80 @@ describe("fromWindow", () => {
     (globalThis as Record<string, unknown>)[key] = { API_URL: "x" };
     expect(fromWindow(key)()).toEqual({ API_URL: "x" });
     delete (globalThis as Record<string, unknown>)[key];
+  });
+});
+
+describe("merge", () => {
+  it("shallow-merges all source results, later sources win", async () => {
+    const source = merge(
+      () => ({ API_URL: "https://base.example.com", LOG_LEVEL: "info" }),
+      () => ({ API_URL: "https://env.example.com" })
+    );
+
+    expect(await source()).toEqual({
+      API_URL: "https://env.example.com",
+      LOG_LEVEL: "info",
+    });
+  });
+
+  it("merge order follows call order, not resolution order", async () => {
+    const slow = () =>
+      new Promise((resolve) =>
+        setTimeout(() => resolve({ API_URL: "https://slow-base.example.com" }), 20)
+      );
+    const fast = () => ({ API_URL: "https://fast-override.example.com" });
+
+    // fast resolves first but is specified last — it must still win
+    expect(await merge(slow, fast)()).toEqual({
+      API_URL: "https://fast-override.example.com",
+    });
+  });
+
+  it("skips nullish parts, nullish when all parts are nullish", async () => {
+    expect(
+      await merge(() => undefined, () => ({ API_URL: "x" }), () => null)()
+    ).toEqual({ API_URL: "x" });
+    expect(await merge(() => undefined, () => null)()).toBeUndefined();
+  });
+
+  it("propagates a throwing part (so the source chain can fall through)", async () => {
+    const source = merge(() => ({ API_URL: "x" }), () => {
+      throw new Error("overrides down");
+    });
+
+    await expect(source()).rejects.toThrow("overrides down");
+  });
+
+  it("validates the merged result through attune", async () => {
+    const config = await attune({
+      schema,
+      sources: [
+        merge(
+          () => ({ API_URL: "https://base.example.com" }),
+          () => ({ LOG_LEVEL: "debug" })
+        ),
+      ],
+    }).load();
+
+    expect(config).toEqual({
+      API_URL: "https://base.example.com",
+      LOG_LEVEL: "debug",
+    });
+  });
+});
+
+describe("dependent configs", () => {
+  it("a source can await another attuned instance", async () => {
+    const base = attune({
+      schema: z.object({ FEATURES_URL: z.string() }),
+      sources: [() => ({ FEATURES_URL: "/features.json" })],
+    });
+    const features = attune({
+      schema: z.object({ BETA: z.boolean().default(false) }),
+      sources: [async () => ({ BETA: (await base.load()).FEATURES_URL === "/features.json" })],
+    });
+
+    expect((await features.load()).BETA).toBe(true);
   });
 });
 

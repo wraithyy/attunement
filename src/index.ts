@@ -212,6 +212,24 @@ export function fromJson(url: string, options: FromJsonOptions = {}): Source {
   };
 }
 
+/**
+ * Combine sources into one: all run in parallel, results shallow-merge with
+ * later sources winning (base first, overrides last). Nullish parts are
+ * skipped; if every part is nullish the merge yields nothing and the source
+ * chain falls through. A throwing part fails the whole merge.
+ */
+// ponytail: shallow merge only — nested override sections need their own source
+export function merge(...sources: Source[]): Source {
+  return async () => {
+    const parts = await Promise.all(sources.map((source) => source()));
+    const objects = parts.filter(
+      (part): part is object => part !== null && typeof part === "object"
+    );
+    if (objects.length === 0) return undefined;
+    return Object.assign({}, ...objects);
+  };
+}
+
 /** Source: read a global injected into index.html (e.g. window.__APP_CONFIG__). */
 export function fromWindow(key: string): Source {
   return () => (globalThis as Record<string, unknown>)[key];
