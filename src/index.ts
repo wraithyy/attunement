@@ -28,14 +28,73 @@ export class ConfigError extends Error {
   }
 }
 
-function formatIssues(issues: readonly StandardSchemaV1.Issue[]): string {
+function levenshtein(a: string, b: string): number {
+  // ponytail: O(n*m) full matrix; config keys are short, never a bottleneck
+  // ?? 0 never fires — indexes are in-bounds by construction, this only
+  // satisfies noUncheckedIndexedAccess
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = row[0] ?? 0;
+    row[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const next = Math.min(
+        (row[j] ?? 0) + 1,
+        (row[j - 1] ?? 0) + 1,
+        prev + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+      prev = row[j] ?? 0;
+      row[j] = next;
+    }
+  }
+  return row[b.length] ?? 0;
+}
+
+function didYouMean(key: string, rawKeys: string[]): string {
+  const nearest = rawKeys
+    .filter((raw) => raw !== key)
+    .map((raw) => ({ raw, distance: levenshtein(key, raw) }))
+    .filter(({ distance }) => distance <= 2)
+    .sort((a, b) => a.distance - b.distance)[0];
+  return nearest ? ` (did you mean "${nearest.raw}"?)` : "";
+}
+
+/** @internal shared by attune() and the test provider */
+export function formatIssues(
+  issues: readonly StandardSchemaV1.Issue[],
+  raw?: unknown
+): string {
+  const rawKeys =
+    raw && typeof raw === "object" ? Object.keys(raw) : [];
   const lines = issues.map((issue) => {
-    const path = issue.path
-      ?.map((p) => (typeof p === "object" ? String(p.key) : String(p)))
-      .join(".");
-    return path ? `  ${path}: ${issue.message}` : `  ${issue.message}`;
+    const segments = issue.path?.map((p) =>
+      typeof p === "object" ? String(p.key) : String(p)
+    );
+    const path = segments?.join(".");
+    if (!path) return `  ${issue.message}`;
+    // suggest only for top-level keys the raw object doesn't have
+    const first = segments?.length === 1 ? segments[0] : undefined;
+    const suggestion =
+      first !== undefined && !rawKeys.includes(first)
+        ? didYouMean(first, rawKeys)
+        : "";
+    return `  ${path}: ${issue.message}${suggestion}`;
   });
   return `Invalid runtime config — you didn't say the magic word:\n${lines.join("\n")}`;
+}
+
+/**
+ * @internal freeze the validated config so nothing mutates it after load.
+ * Guards plain data only — internal state of Date/class instances stays
+ * mutable (Object.freeze can't reach it).
+ */
+export function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value)) {
+      deepFreeze(child);
+    }
+  }
+  return value;
 }
 
 async function resolveSources(sources: Source[]): Promise<unknown> {
@@ -70,11 +129,12 @@ export function attune<S extends StandardSchemaV1>(
     const result = await options.schema["~standard"].validate(raw);
 
     if (result.issues) {
-      throw new ConfigError(formatIssues(result.issues), result.issues);
+      throw new ConfigError(formatIssues(result.issues, raw), result.issues);
     }
 
-    await options.onLoad?.(result.value);
-    return result.value;
+    const config = deepFreeze(result.value);
+    await options.onLoad?.(config);
+    return config;
   })();
 
   // eager start must not surface as unhandledrejection when nobody awaited yet
@@ -83,14 +143,63 @@ export function attune<S extends StandardSchemaV1>(
   return { load: () => promise };
 }
 
-/** Source: fetch a JSON file (e.g. /app-config.json). Non-2xx throws. */
-export function fromJson(url: string, init?: RequestInit): Source {
+export interface FromJsonOptions extends RequestInit {
+  /** Per-attempt timeout in ms; 0 disables. Default 8000. */
+  timeoutMs?: number;
+  /** Extra attempts after the first, on network errors, timeouts and 5xx. Default 2. */
+  retries?: number;
+  /** Base backoff delay in ms, doubles each retry. Default 300. */
+  backoffMs?: number;
+}
+
+function attemptSignal(timeoutMs: number, outer: AbortSignal | null | undefined) {
+  if (!timeoutMs) return outer ?? undefined;
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return outer ? AbortSignal.any([outer, timeout]) : timeout;
+}
+
+/**
+ * Source: fetch a JSON file (e.g. /app-config.json). Non-2xx throws;
+ * network errors, timeouts and 5xx are retried with exponential backoff.
+ */
+export function fromJson(url: string, options: FromJsonOptions = {}): Source {
+  const { timeoutMs = 8000, retries = 2, backoffMs = 300, ...init } = options;
+
   return async () => {
-    const response = await fetch(url, init);
-    if (!response.ok) {
-      throw new Error(`${url}: HTTP ${response.status} ${response.statusText}`);
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      if (attempt > 0 && backoffMs > 0) {
+        await new Promise((r) => setTimeout(r, backoffMs * 2 ** (attempt - 1)));
+      }
+      // caller cancelled the whole load — fail now, don't retry
+      if (init.signal?.aborted) throw init.signal.reason;
+
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          ...init,
+          signal: attemptSignal(timeoutMs, init.signal),
+        });
+      } catch (error) {
+        if (init.signal?.aborted) throw error;
+        lastError = error; // network error or timeout — retry
+        continue;
+      }
+
+      if (response.ok) return response.json();
+
+      const error = new Error(
+        `${url}: HTTP ${response.status} ${response.statusText}`
+      );
+      if (response.status < 500) throw error; // 4xx won't heal, don't retry
+      lastError = error;
     }
-    return response.json();
+
+    const message = lastError instanceof Error ? lastError.message : String(lastError);
+    throw retries > 0
+      ? new Error(`${url}: ${retries + 1} attempts failed, last error: ${message}`)
+      : lastError;
   };
 }
 

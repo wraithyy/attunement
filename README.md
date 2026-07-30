@@ -97,7 +97,12 @@ Sources are tried in order; the first one that yields data wins.
 | Source | What it does | Typical use |
 |---|---|---|
 | `fromWindow(key)` | Reads `window[key]` | Config injected into `index.html` at deploy — zero extra request |
-| `fromJson(url)` | Fetches and parses JSON | `app-config.json` served next to the bundle |
+| `fromJson(url, options?)` | Fetches and parses JSON | `app-config.json` served next to the bundle |
+
+`fromJson` retries network errors, timeouts and 5xx with exponential backoff —
+defaults: 8 s per-attempt timeout, 2 retries, 300 ms base backoff. 4xx fails
+immediately (a missing config file won't heal). Tune via
+`fromJson(url, { timeoutMs, retries, backoffMs, ...fetchInit })`.
 
 A source is just `() => unknown \| Promise<unknown>`. Returning
 `undefined`/`null` or throwing falls through to the next source; if none
@@ -117,6 +122,7 @@ switch next to the main config).
 | `fromJson(url)` | both | JSON fetch source |
 | `fromWindow(key)` | both | `window` global source |
 | `ConfigError` | both | Thrown/passed on validation failure; carries per-key issues |
+| `createTestProvider(config, overrides)` | `attunement/testing` | Synchronous Provider for tests — no fetch, no Suspense |
 
 Types flow from the schema — you never write generics.
 
@@ -157,6 +163,42 @@ export function getUserManager() {
 Avoid exporting config-derived values synchronously at module scope
 (`export const oauthConfig = {...}`) — the config may not have arrived yet.
 That race is the whole reason this library exists.
+
+## Testing
+
+`createTestProvider` gives components config synchronously — overrides are
+validated against your schema and merged over its defaults, so a typo fails
+the test at setup with a named key, not three asserts later:
+
+```tsx
+import { createTestProvider } from "attunement/testing";
+import { appConfig } from "./config";
+
+const TestProvider = createTestProvider(appConfig, {
+  API_URL: "http://localhost:9999",
+});
+
+render(<TestProvider><UserList /></TestProvider>);
+```
+
+## All-strings config (env-var substitution)
+
+If your config file is produced by env-var substitution in CI
+(`"MAX_PHOTOS": "$MAX_PHOTOS"`), every value arrives as a string. Let the
+schema own the coercion:
+
+```ts
+const schema = z.object({
+  MAX_PHOTOS: z.coerce.number().int().default(30),
+  ENABLE_MOCKING: z
+    .preprocess((v) => v === "true" || v === true, z.boolean())
+    .default(false),
+});
+```
+
+`z.coerce.number()` covers numbers; booleans need the one-line preprocess
+because `Boolean("false") === true`. Typed JSON keeps working — coercion of an
+already-correct type is a no-op.
 
 ## Framework-agnostic core
 
