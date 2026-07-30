@@ -120,6 +120,44 @@ switch next to the main config).
 
 Types flow from the schema — you never write generics.
 
+## Outside the React tree
+
+API clients, loggers, OAuth setup — anything that isn't a component reads the
+same cached load. Two patterns:
+
+**One-time imperative setup → `onLoad`.** Runs after validation, before first
+render:
+
+```ts
+onLoad: (config) => {
+  setApiBaseUrl(config.API_URL);
+  initLogger(config.LOG_LEVEL);
+},
+```
+
+**Lazily created services → `await load()`.** The promise is shared and cached;
+after the first resolution awaiting it is a microtask:
+
+```ts
+// auth.ts — config arrives once, UserManager is created once
+let userManager: Promise<UserManager> | undefined;
+
+export function getUserManager() {
+  userManager ??= appConfig.load().then(
+    (c) => new UserManager({
+      authority: c.OAUTH_AUTHORITY,
+      client_id: c.OAUTH_CLIENT_ID,
+      redirect_uri: `${location.origin}/callback`,
+    })
+  );
+  return userManager;
+}
+```
+
+Avoid exporting config-derived values synchronously at module scope
+(`export const oauthConfig = {...}`) — the config may not have arrived yet.
+That race is the whole reason this library exists.
+
 ## Framework-agnostic core
 
 ```ts
