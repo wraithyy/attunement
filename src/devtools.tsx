@@ -21,11 +21,19 @@ export function writeOverrides(
   overrides: Record<string, unknown>,
   storageKey = DEFAULT_KEY
 ): void {
-  localStorage.setItem(storageKey, JSON.stringify(overrides));
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(overrides));
+  } catch {
+    // private mode / quota — overrides just don't persist
+  }
 }
 
 export function clearOverrides(storageKey = DEFAULT_KEY): void {
-  localStorage.removeItem(storageKey);
+  try {
+    localStorage.removeItem(storageKey);
+  } catch {
+    // ignore, see writeOverrides
+  }
 }
 
 function urlOverrides(): Record<string, unknown> {
@@ -34,6 +42,8 @@ function urlOverrides(): Record<string, unknown> {
   for (const [name, value] of params) {
     if (!name.startsWith("config.")) continue;
     const key = name.slice("config.".length);
+    // bracket-assignment on a plain object would hit the __proto__ setter
+    if (key === "__proto__" || key === "constructor" || key === "prototype") continue;
     try {
       overrides[key] = JSON.parse(value); // numbers/booleans/JSON
     } catch {
@@ -129,9 +139,10 @@ function FieldInput({
       value={value === undefined ? "" : String(value)}
       placeholder={field.defaultValue !== undefined ? String(field.defaultValue) : ""}
       onChange={(e) => {
+        // keep the raw text while typing ("1." must survive); numbers are
+        // coerced once, on save
         const text = e.target.value;
-        if (text === "") return onChange(undefined);
-        onChange(field.type === "number" && !Number.isNaN(Number(text)) ? Number(text) : text);
+        onChange(text === "" ? undefined : text);
       }}
     />
   );
@@ -195,7 +206,19 @@ export function AttunementDevtoolsPanel({ config, storageKey = DEFAULT_KEY }: De
         <button
           style={styles.button}
           onClick={() => {
-            writeOverrides(overrides, storageKey);
+            const coerced = Object.fromEntries(
+              Object.entries(overrides).map(([key, value]) => {
+                const field = fields.find((f) => f.key === key);
+                const asNumber = Number(value);
+                return field?.type === "number" &&
+                  typeof value === "string" &&
+                  value.trim() !== "" &&
+                  Number.isFinite(asNumber)
+                  ? [key, asNumber]
+                  : [key, value];
+              })
+            );
+            writeOverrides(coerced, storageKey);
             location.reload();
           }}
         >

@@ -39,6 +39,14 @@ describe("fromOverrides", () => {
     });
   });
 
+  it("ignores prototype-polluting URL keys", async () => {
+    stubStorage();
+    stubLocation('?config.__proto__={"polluted":1}&config.SAFE=1');
+
+    expect(await fromOverrides()()).toEqual({ SAFE: 1 });
+    expect(({} as Record<string, unknown>)["polluted"]).toBeUndefined();
+  });
+
   it("URL params win over stored overrides; nullish when there are none", async () => {
     stubStorage({ "attunement:overrides": JSON.stringify({ MAX: 1 }) });
     stubLocation("?config.MAX=2");
