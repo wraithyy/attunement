@@ -40,7 +40,14 @@
     "./testing": {
       "types": "./dist/testing.d.ts",
       "default": "./dist/testing.js"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "default": "./dist/cli.js"
     }
+  },
+  "bin": {
+    "attunement": "./dist/bin.js"
   },
   "scripts": {
     "build": "tsup",
@@ -60,6 +67,7 @@
   "devDependencies": {
     "@changesets/cli": "^2.31.1",
     "@standard-schema/spec": "^1.0.0",
+    "@types/node": "^26.1.2",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.2.3",
     "react": "^19.0.0",
