@@ -79,12 +79,12 @@ panel (until `attunement/devtools` exists).
 
 ### v0.3 — CI story (the enterprise sell)
 
-- [ ] `attunement check <files...>` CLI: validate config files against the
+- [x] `attunement check <files...>` CLI: validate config files against the
       schema in CI, catch broken config before deploy, not at boot
-- [ ] `--all` + diff mode: key present in prod but missing in stage
-- [ ] Secret hygiene warnings: `*_SECRET`/`*_KEY`/`*_TOKEN` names, high-entropy
+- [x] `--all` + diff mode: key present in prod but missing in stage
+- [x] Secret hygiene warnings: `*_SECRET`/`*_KEY`/`*_TOKEN` names, high-entropy
       values (SPA config is public)
-- [ ] Docs generation from schema `.describe()`: markdown table of keys, types,
+- [x] Docs generation from schema `.describe()`: markdown table of keys, types,
       defaults
 
 ### v0.4 — DX extras
