@@ -187,7 +187,16 @@ export function fromJson(url: string, options: FromJsonOptions = {}): Source {
         continue;
       }
 
-      if (response.ok) return response.json();
+      if (response.ok) {
+        try {
+          return await response.json();
+        } catch (error) {
+          // body stalled/dropped after headers, or truncated JSON — retry
+          if (init.signal?.aborted) throw error;
+          lastError = error;
+          continue;
+        }
+      }
 
       const error = new Error(
         `${url}: HTTP ${response.status} ${response.statusText}`
