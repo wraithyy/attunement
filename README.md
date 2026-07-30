@@ -7,47 +7,53 @@
 [![license](https://img.shields.io/npm/l/attunement)](./LICENSE)
 ![gzip size](https://img.shields.io/bundlejs/size/attunement)
 
-- **One build, any environment** — config loads at runtime, not at build time
-- **Schema-first** — types, validation and defaults from one definition, via [Standard Schema](https://standardschema.dev) (Zod, Valibot, ArkType — your pick)
-- **Race-free** — loading starts at module scope, React suspends until config is ready; components never see `undefined`
-- **Tiny & tree-shakable** — zero dependencies, ~1 kB core, ESM only
-- **Framework-agnostic core** — React adapter included, the core is plain TypeScript
+- **One build, any environment** — config loads at runtime; changing an API URL is a redeploy, not a rebuild
+- **Schema-first** — types, validation and defaults from one definition, via [Standard Schema](https://standardschema.dev) (Zod, Valibot, ArkType)
+- **Race-free** — React renders only after config is loaded and valid; components never see `undefined`
+- **Test-ready** — `createTestProvider` gives components config synchronously, no fetch, no mocks
+- **Tiny** — zero dependencies, ~1 kB core, tree-shakable ESM
+- **Framework-agnostic core** — React 19 adapter included, plain `load()` everywhere else; multiple independent instances per app
+
+Pre-1.0: the API is small and settling — minor versions may still move it.
+Roadmap and design notes in [docs/plan.md](./docs/plan.md).
 
 ## Why
 
-Build once, deploy anywhere. A SPA built with `import.meta.env` bakes its
-configuration into the bundle — every environment needs its own build, and
-changing a URL means a rebuild and a full release. That breaks the basic CI/CD
-contract: **the artifact you tested is the artifact you ship**.
+A SPA built with `import.meta.env` bakes configuration into the bundle — every
+environment needs its own build, which breaks the basic CI/CD contract that
+**the artifact you tested is the artifact you ship**. attunement loads config
+at runtime instead: one artifact promoted through dev → staging → production,
+config owned by your deployment tooling (Helm values, Terraform, an `envsubst`
+in the entrypoint). The catch with runtime config is that it arrives untyped,
+unvalidated and racing your first render — closing that gap is what this
+library is for.
 
-Runtime config inverts this: **one tested build artifact promoted through every
-environment** — dev, staging, production — and everything environment-specific
-lives next to the deployment: API base URL, log level, OAuth client ids,
-feature flags, limits. Config then belongs to your deployment tooling, where it
-already lives for the backend: a Helm values file templated into a ConfigMap, a
-Terraform resource, an env-var substitution in the deploy job — anything that
-can drop a JSON file next to the bundle or inject a `<script>` into
-`index.html`. Changing a URL is a config change and a redeploy, not a rebuild
-and a release.
+### vs. the alternatives
 
-The catch is that runtime config arrives *at runtime* — untyped, unvalidated,
-and racing your first render. attunement closes that gap: define a schema once
-and get types, validation, defaults and a render gate from a single definition.
+| | Runtime (no rebuild) | Schema validation | Blocks render until ready |
+|---|:---:|:---:|:---:|
+| **attunement** | ✅ | ✅ any Standard Schema | ✅ Suspense gate |
+| `import.meta.env` / [import-meta-env](https://github.com/runtime-env/import-meta-env) | ❌ build-time | ❌ (generated types only) | — |
+| hand-rolled `window._env_` + `envsubst` | ✅ | ❌ unless you write it | ❌ script-order luck |
+| `runtime-env-cra`, `react-inject-env` | ✅ | ❌ | ❌ (both unmaintained for years) |
+| ConfigCat / Unleash / LaunchDarkly | ✅ | flag-level only | SDK-specific |
+
+Feature-flag services solve a different problem (targeting, rollout,
+experimentation) — a `Source` can wrap their SDK if you use both.
 
 ## Install
 
 ```sh
-pnpm add attunement
-# or npm install / yarn add
+pnpm add attunement   # or npm / yarn
 ```
 
-React adapter needs React 19+ (it builds on `use()`). The core has no
-dependencies and works anywhere.
+Browser SPAs only (no SSR — config lives server-side there). The React adapter
+needs React 19+; the zero-dependency core runs anywhere with `fetch`.
 
-## Usage
+## Quick start
 
 ```tsx
-// config.ts — module scope, so the fetch races your bundle
+// config.ts — module scope, so the fetch starts with the app, not with a render
 import { z } from "zod";
 import { attuneReact, fromWindow, fromJson } from "attunement/react";
 import { setApiBaseUrl } from "./api";
@@ -59,13 +65,13 @@ export const appConfig = attuneReact({
   }),
   sources: [fromWindow("__APP_CONFIG__"), fromJson("/app-config.json")],
   onLoad: (config) => {
-    setApiBaseUrl(config.API_URL); // runs before first render, no race
+    setApiBaseUrl(config.API_URL); // runs before first render
   },
 });
 ```
 
 ```tsx
-// main.tsx — no async bootstrap
+// main.tsx
 createRoot(el).render(
   <appConfig.Provider fallback={<Splash />} errorFallback={(e) => <ConfigError error={e} />}>
     <App />
@@ -78,25 +84,58 @@ createRoot(el).render(
 const { API_URL } = appConfig.use();
 ```
 
-Non-React code uses the same cached load: `await appConfig.load()`.
+Non-React code uses the same cached load: `await appConfig.load()` — see
+[recipes](./docs/recipes.md) for OAuth clients and loggers.
 
-## How it solves the race
+**Local dev:** put `app-config.json` in Vite's `public/` directory — it's
+served at `/app-config.json` in dev and copied next to the bundle on build.
+In production your deploy pipeline replaces it per environment
+([how](./docs/recipes.md#serving-the-config-file-per-environment)).
 
-- `attuneReact()` starts loading **at module evaluation**, parallel to the rest
-  of your bundle — no render-time waterfall.
-- `Provider` suspends until config resolves; children never render without it.
-- With `fromWindow` (config injected into `index.html` at deploy) resolution is
-  a microtask — the fallback never even flashes.
-- Invalid config → `ConfigError` with per-key issues → your `errorFallback`
-  instead of a white page. Missing keys get a did-you-mean suggestion against
-  the keys actually present: `API_URL: Required (did you mean "API_URl"?)`.
-- The loaded config is deep-frozen — accidental mutation throws in strict mode
-  instead of silently desyncing parts of your app. Need a mutable copy?
-  `structuredClone(config)`.
+```
+public/app-config.json   → served at /app-config.json
+src/config.ts            → attuneReact() + schema
+src/main.tsx             → Provider
+```
+
+## Testing
+
+Components under test get config synchronously — no fetch, no Suspense,
+no mocking:
+
+```tsx
+import { createTestProvider } from "attunement/testing";
+import { appConfig } from "./config";
+
+const TestProvider = createTestProvider(appConfig, {
+  API_URL: "http://localhost:9999", // merged over schema defaults
+});
+
+render(<TestProvider><UserList /></TestProvider>);
+```
+
+Overrides are validated against your schema — a typo fails the test at setup
+with a named key, not three asserts later.
+
+## How it works
+
+- Loading starts when `attuneReact()` is called (module scope), in parallel
+  with the rest of your app booting — by first paint the config is usually
+  already there.
+- `Provider` shows `fallback` until config is loaded and valid; with
+  `fromWindow` (config injected into `index.html`) it resolves so fast the
+  fallback never appears.
+- Invalid config → `ConfigError` in your `errorFallback` instead of a white
+  page, with per-key issues and a did-you-mean for typos:
+  `API_URL: Required (did you mean "API_URl"?)`.
+- The loaded config is deep-frozen — accidental mutation throws instead of
+  silently desyncing the app. Need a mutable copy? `structuredClone(config)`.
 
 ## Sources
 
-Sources are tried in order; the first one that yields data wins.
+Sources are tried in order; the first one that yields data wins. Returning
+`undefined`/`null` or throwing falls through to the next; if none succeeds you
+get a `ConfigError` listing what each source said.
 
 | Source | What it does | Typical use |
 |---|---|---|
@@ -104,18 +143,12 @@ Sources are tried in order; the first one that yields data wins.
 | `fromJson(url, options?)` | Fetches and parses JSON | `app-config.json` served next to the bundle |
 
 `fromJson` retries network errors, timeouts and 5xx with exponential backoff —
-defaults: 8 s per-attempt timeout, 2 retries, 300 ms base backoff. 4xx fails
-immediately (a missing config file won't heal). Tune via
-`fromJson(url, { timeoutMs, retries, backoffMs, ...fetchInit })`.
+defaults: 8 s per-attempt timeout, 2 retries, 300 ms base backoff; 4xx fails
+immediately. Tune via `fromJson(url, { timeoutMs, retries, backoffMs, ...fetchInit })`.
 
-A source is just `() => unknown \| Promise<unknown>`. Returning
-`undefined`/`null` or throwing falls through to the next source; if none
-succeeds you get a `ConfigError` listing what each source said. Writing your
-own is a one-liner.
-
-Multiple independent configs per app are fine — each `attune()` call is its own
-instance with its own sources and cache (e.g. a polled `shutdown.json` kill
-switch next to the main config).
+A custom source is a one-liner (`() => unknown | Promise<unknown>`), and each
+`attune()` call is an independent instance — see the
+[kill-switch recipe](./docs/recipes.md#second-config-instance-kill-switch).
 
 ## API
 
@@ -123,94 +156,24 @@ switch next to the main config).
 |---|---|---|
 | `attune(options)` | `attunement` | Core factory → `{ load() }`; promise starts immediately, result is cached |
 | `attuneReact(options)` | `attunement/react` | Core + `{ Provider, use() }` (Suspense + error boundary) |
-| `fromJson(url)` | both | JSON fetch source |
+| `fromJson(url, options?)` | both | JSON fetch source with timeout + retry |
 | `fromWindow(key)` | both | `window` global source |
 | `ConfigError` | both | Thrown/passed on validation failure; carries per-key issues |
-| `createTestProvider(config, overrides)` | `attunement/testing` | Synchronous Provider for tests — no fetch, no Suspense |
+| `createTestProvider(config, overrides)` | `attunement/testing` | Synchronous Provider for tests |
 
 Types flow from the schema — you never write generics.
 
-## Outside the React tree
+## Recipes
 
-API clients, loggers, OAuth setup — anything that isn't a component reads the
-same cached load. Two patterns:
+[docs/recipes.md](./docs/recipes.md): config outside the React tree (OAuth,
+loggers), all-strings config from env-var substitution, serving the file per
+environment (Helm, nginx `envsubst`, CDN), second instance as a kill switch.
 
-**One-time imperative setup → `onLoad`.** Runs after validation, before first
-render:
+## Contributing
 
-```ts
-onLoad: (config) => {
-  setApiBaseUrl(config.API_URL);
-  initLogger(config.LOG_LEVEL);
-},
-```
-
-**Lazily created services → `await load()`.** The promise is shared and cached;
-after the first resolution awaiting it is a microtask:
-
-```ts
-// auth.ts — config arrives once, UserManager is created once
-let userManager: Promise<UserManager> | undefined;
-
-export function getUserManager() {
-  userManager ??= appConfig.load().then(
-    (c) => new UserManager({
-      authority: c.OAUTH_AUTHORITY,
-      client_id: c.OAUTH_CLIENT_ID,
-      redirect_uri: `${location.origin}/callback`,
-    })
-  );
-  return userManager;
-}
-```
-
-Avoid exporting config-derived values synchronously at module scope
-(`export const oauthConfig = {...}`) — the config may not have arrived yet.
-That race is the whole reason this library exists.
-
-## Testing
-
-`createTestProvider` gives components config synchronously — overrides are
-validated against your schema and merged over its defaults, so a typo fails
-the test at setup with a named key, not three asserts later:
-
-```tsx
-import { createTestProvider } from "attunement/testing";
-import { appConfig } from "./config";
-
-const TestProvider = createTestProvider(appConfig, {
-  API_URL: "http://localhost:9999",
-});
-
-render(<TestProvider><UserList /></TestProvider>);
-```
-
-## All-strings config (env-var substitution)
-
-If your config file is produced by env-var substitution in CI
-(`"MAX_PHOTOS": "$MAX_PHOTOS"`), every value arrives as a string. Let the
-schema own the coercion:
-
-```ts
-const schema = z.object({
-  MAX_PHOTOS: z.coerce.number().int().default(30),
-  ENABLE_MOCKING: z
-    .preprocess((v) => v === "true" || v === true, z.boolean())
-    .default(false),
-});
-```
-
-`z.coerce.number()` covers numbers; booleans need the one-line preprocess
-because `Boolean("false") === true`. Typed JSON keeps working — coercion of an
-already-correct type is a no-op.
-
-## Framework-agnostic core
-
-```ts
-import { attune, fromJson } from "attunement";
-
-const config = await attune({ schema, sources: [fromJson("/app-config.json")] }).load();
-```
+Issues and PRs welcome — run `pnpm test && pnpm typecheck && pnpm build`
+before pushing. Releases via changesets; changelog on
+[GitHub Releases](https://github.com/wraithyy/attunement/releases).
 
 ## License
 
