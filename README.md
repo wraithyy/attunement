@@ -20,10 +20,15 @@ configuration into the bundle — every environment needs its own build, and
 changing a URL means a rebuild and a full release. That breaks the basic CI/CD
 contract: **the artifact you tested is the artifact you ship**.
 
-Runtime config inverts this: one built artifact, and everything
-environment-specific lives next to the deployment — API base URL, log level,
-OAuth client ids, feature flags, limits. Ops changes a JSON file, not your CI
-pipeline.
+Runtime config inverts this: **one tested build artifact promoted through every
+environment** — dev, staging, production — and everything environment-specific
+lives next to the deployment: API base URL, log level, OAuth client ids,
+feature flags, limits. Config then belongs to your deployment tooling, where it
+already lives for the backend: a Helm values file templated into a ConfigMap, a
+Terraform resource, an env-var substitution in the deploy job — anything that
+can drop a JSON file next to the bundle or inject a `<script>` into
+`index.html`. Changing a URL is a config change and a redeploy, not a rebuild
+and a release.
 
 The catch is that runtime config arrives *at runtime* — untyped, unvalidated,
 and racing your first render. attunement closes that gap: define a schema once
