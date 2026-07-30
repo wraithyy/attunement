@@ -1,0 +1,66 @@
+{
+  "name": "attunement",
+  "version": "0.0.1",
+  "description": "Typed, validated runtime config for SPAs. The app attunes to its environment before first render.",
+  "keywords": [
+    "runtime-config",
+    "config",
+    "app-config",
+    "zod",
+    "standard-schema",
+    "react",
+    "vite",
+    "spa"
+  ],
+  "license": "MIT",
+  "author": "Josef Kvapil",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wraithyy/attunement.git"
+  },
+  "homepage": "https://github.com/wraithyy/attunement#readme",
+  "bugs": "https://github.com/wraithyy/attunement/issues",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "default": "./dist/react.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "changeset": "changeset"
+  },
+  "peerDependencies": {
+    "react": ">=19"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.31.1",
+    "@standard-schema/spec": "^1.0.0",
+    "@types/react": "^19.0.0",
+    "react": "^19.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "zod": "^3.24.0"
+  }
+}
