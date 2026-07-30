@@ -73,6 +73,29 @@ into `index.html`) works:
 - **Plain object storage/CDN**: upload a per-environment `app-config.json`
   next to the bundle in the deploy job.
 
+## Config check in the pipeline
+
+Validate every environment's config file on each push — a broken config fails
+CI, not the production boot:
+
+```yaml
+# .github/workflows/ci.yml
+config-check:
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 24
+    - run: npm ci
+    - run: npx attunement check --schema src/config-schema.ts config/*.json --diff
+```
+
+Keep the schema in its own module (`src/config-schema.ts` exporting `schema`)
+so the CLI can import it without pulling in the app. On GitLab CI the same
+command goes into any `script:` block. Secret hygiene warnings show up in the
+job log; they don't fail the job.
+
 ## Base + overrides (merged configs)
 
 `merge` combines sources instead of falling through them: all run in parallel,
