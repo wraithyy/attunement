@@ -71,14 +71,14 @@ panel (until `attunement/devtools` exists).
 
 ### v0.2 — adoption blockers (what App A/App B need to migrate)
 
-- [ ] Test helpers: `createTestProvider(overrides)` — partial override over
+- [x] Test helpers: `createTestProvider(overrides)` — partial override over
       schema defaults, synchronous, no Suspense in tests
-- [ ] Fetch resilience: timeout + retry with backoff on `fromJson`
-- [ ] Pretty validation errors: key, expected, received, did-you-mean over
+- [x] Fetch resilience: timeout + retry with backoff on `fromJson`
+- [x] Pretty validation errors: key, expected, received, did-you-mean over
       schema keys (levenshtein)
-- [ ] Coercion story documented (App B case): recipe with `z.coerce` /
+- [x] Coercion story documented (App B case): recipe with `z.coerce` /
       preprocess, or a `coerceStrings` helper if the recipe isn't enough
-- [ ] Deep freeze of the parsed config
+- [x] Deep freeze of the parsed config
 
 ### v0.3 — CI story (the enterprise sell)
 
