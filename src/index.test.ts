@@ -190,6 +190,25 @@ describe("fromJson", () => {
     vi.unstubAllGlobals();
   });
 
+  it("does not retry when the caller's own signal aborted", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn((_: string, init: RequestInit) => {
+      controller.abort();
+      return Promise.reject(init.signal?.reason ?? new Error("aborted"));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      fromJson("/app-config.json", {
+        retries: 3,
+        backoffMs: 0,
+        signal: controller.signal,
+      })()
+    ).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
   it("aborts an attempt after timeoutMs", async () => {
     vi.stubGlobal(
       "fetch",
