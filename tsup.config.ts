@@ -7,6 +7,7 @@ export default defineConfig({
     testing: "src/testing.tsx",
     cli: "src/cli.ts",
     bin: "src/bin.ts",
+    devtools: "src/devtools.tsx",
   },
   format: ["esm"],
   dts: true,
