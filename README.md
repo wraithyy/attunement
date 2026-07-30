@@ -163,8 +163,32 @@ A custom source is a one-liner (`() => unknown | Promise<unknown>`), and each
 | `ConfigError` | both | Thrown/passed on validation failure; carries per-key issues |
 | `createTestProvider(config, overrides)` | `attunement/testing` | Synchronous Provider for tests |
 | `attunement` CLI (`check`, `docs`) | bin / `attunement/cli` | Validate config files in CI, generate schema docs |
+| `AttunementDevtools` / `attunementDevtoolsPlugin` / `fromOverrides` | `attunement/devtools` | Dev override panel — standalone or TanStack Devtools plugin |
 
 Types flow from the schema — you never write generics.
+
+## Devtools
+
+Dev-only override panel generated from your schema — enum → select,
+boolean → checkbox. Works standalone or as a TanStack Devtools plugin:
+
+```tsx
+import { AttunementDevtools, attunementDevtoolsPlugin, fromOverrides } from "attunement/devtools";
+
+// 1. let overrides participate in loading (dev only, merged over real config)
+sources: [merge(fromJson("/app-config.json"), fromOverrides())]
+
+// 2a. standalone floating widget
+{import.meta.env.DEV && <AttunementDevtools config={appConfig} />}
+
+// 2b. or as a TanStack Devtools plugin
+<TanStackDevtools plugins={[attunementDevtoolsPlugin(appConfig)]} />
+```
+
+Overrides live in localStorage, validated by the schema on load like any other
+config; saving reloads the page (config is load-once by design).
+`?config.KEY=value` in the URL bootstraps an override — handy for sharing a
+repro link.
 
 ## CI check
 
