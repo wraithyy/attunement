@@ -4,6 +4,7 @@ import {
   createContext,
   Suspense,
   use,
+  type Context,
   type ReactNode,
 } from "react";
 import { attune, type AttuneOptions, type Attuned } from "./index.js";
@@ -18,10 +19,17 @@ export interface ProviderProps {
   errorFallback?: ReactNode | ((error: Error) => ReactNode);
 }
 
-export interface AttunedReact<T> extends Attuned<T> {
+export interface AttunedReact<
+  T,
+  S extends StandardSchemaV1 = StandardSchemaV1,
+> extends Attuned<T> {
   Provider: (props: ProviderProps) => ReactNode;
   /** Config, guaranteed loaded — only renders under Provider. */
   use: () => T;
+  /** @internal wiring for attunement/testing — not public API */
+  _ctx: Context<T | null>;
+  /** @internal */
+  _schema: S;
 }
 
 interface BoundaryProps {
@@ -55,7 +63,7 @@ class ConfigBoundary extends Component<
  */
 export function attuneReact<S extends StandardSchemaV1>(
   options: AttuneOptions<S>
-): AttunedReact<StandardSchemaV1.InferOutput<S>> {
+): AttunedReact<StandardSchemaV1.InferOutput<S>, S> {
   type T = StandardSchemaV1.InferOutput<S>;
 
   const attuned = attune(options);
@@ -84,5 +92,5 @@ export function attuneReact<S extends StandardSchemaV1>(
     return config;
   }
 
-  return { ...attuned, Provider, use: useConfig };
+  return { ...attuned, Provider, use: useConfig, _ctx: Ctx, _schema: options.schema };
 }
