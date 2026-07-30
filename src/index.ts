@@ -82,7 +82,11 @@ export function formatIssues(
   return `Invalid runtime config — you didn't say the magic word:\n${lines.join("\n")}`;
 }
 
-/** @internal freeze the validated config so nothing mutates it after load */
+/**
+ * @internal freeze the validated config so nothing mutates it after load.
+ * Guards plain data only — internal state of Date/class instances stays
+ * mutable (Object.freeze can't reach it).
+ */
 export function deepFreeze<T>(value: T): T {
   if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
     Object.freeze(value);
@@ -168,6 +172,9 @@ export function fromJson(url: string, options: FromJsonOptions = {}): Source {
       if (attempt > 0 && backoffMs > 0) {
         await new Promise((r) => setTimeout(r, backoffMs * 2 ** (attempt - 1)));
       }
+      // caller cancelled the whole load — fail now, don't retry
+      if (init.signal?.aborted) throw init.signal.reason;
+
       let response: Response;
       try {
         response = await fetch(url, {
@@ -175,6 +182,7 @@ export function fromJson(url: string, options: FromJsonOptions = {}): Source {
           signal: attemptSignal(timeoutMs, init.signal),
         });
       } catch (error) {
+        if (init.signal?.aborted) throw error;
         lastError = error; // network error or timeout — retry
         continue;
       }
