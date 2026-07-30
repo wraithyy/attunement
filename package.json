@@ -36,6 +36,10 @@
     "./react": {
       "types": "./dist/react.d.ts",
       "default": "./dist/react.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
     }
   },
   "scripts": {
@@ -57,7 +61,9 @@
     "@changesets/cli": "^2.31.1",
     "@standard-schema/spec": "^1.0.0",
     "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.2.3",
     "react": "^19.0.0",
+    "react-dom": "^19.2.8",
     "tsup": "^8.0.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0",
