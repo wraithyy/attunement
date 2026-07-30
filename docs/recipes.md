@@ -73,6 +73,92 @@ into `index.html`) works:
 - **Plain object storage/CDN**: upload a per-environment `app-config.json`
   next to the bundle in the deploy job.
 
+## Base + overrides (merged configs)
+
+`merge` combines sources instead of falling through them: all run in parallel,
+results shallow-merge, later sources win. Validation runs once, over the
+merged result:
+
+```ts
+export const appConfig = attuneReact({
+  schema,
+  sources: [
+    merge(fromJson("/config/base.json"), fromJson("/config/env.json")),
+  ],
+});
+```
+
+If the overrides file is optional, wrap it so a 404 means "no overrides"
+instead of failing the merge:
+
+```ts
+const optional = (source: Source): Source => () =>
+  Promise.resolve(source()).catch(() => undefined);
+
+merge(fromJson("/config/base.json"), optional(fromJson("/config/env.json")))
+```
+
+The merge is shallow — a nested section in the override replaces the whole
+section. For two configs with separate lifecycles, prefer separate `attune()`
+instances over merging.
+
+## Separate schemas
+
+Two schemas ≠ one merged config. Each `attune()` instance owns one schema —
+if two config files have independent shapes and consumers, give each its own
+instance (see the kill switch below). If they form one logical config, compose
+the schema instead and validate the merged result once:
+
+```ts
+const schema = z.object({ ...coreSchema.shape, ...featureSchema.shape });
+```
+
+## Dependent configs (config B's URL lives in config A)
+
+A `Source` is just an async function, so it can await another instance.
+Loading stays eager — B's fetch starts the moment A resolves, not at render
+time:
+
+```ts
+export const appConfig = attune({ schema: appSchema, sources: [fromJson("/app-config.json")] });
+
+export const featureConfig = attune({
+  schema: featureSchema,
+  sources: [async () => fromJson((await appConfig.load()).FEATURES_URL)()],
+});
+```
+
+If A fails, B fails with the same `ConfigError` — surface both through the
+same `errorFallback` or handle B's `load()` rejection separately.
+
+### Module federation caveats
+
+The dependent-config pattern is common with module federation (host config
+carries remote entry/config URLs). Things that bite:
+
+- **Eager load is only as eager as the module.** `attune()` at module scope of
+  a *remote* runs when the remote chunk is loaded, not when the host boots —
+  the waterfall becomes host config → remote JS → remote config → render. If
+  a remote's config is known upfront, warm it from the host:
+  `import("remote/config")` (fire-and-forget) as soon as the host config
+  resolves.
+- **Share the instance, not the library.** Two copies of attunement cost ~2 kB
+  — irrelevant. What matters is the *instance*: a remote cannot read the
+  host's Provider (different context). Either the host exposes its config
+  handle as a federated module (`host/config`) and remotes import it, or each
+  remote owns its config end-to-end. Don't mix per component.
+- **Relative URLs resolve against the host origin.** `fromJson("/config.json")`
+  inside a remote fetches from the *host's* domain. Remotes served from a
+  different origin need absolute URLs — which is exactly what the dependent
+  pattern provides (host config hands out full URLs).
+- **No timeout on the chain.** `fromJson` timeouts are per fetch; the
+  `await appConfig.load()` prefix waits as long as the host config does. If a
+  remote must render even when the host config hangs, give it a fallback
+  source after the dependent one.
+- **Failure isolation.** A remote's `Provider` is its own error boundary —
+  a failed remote config degrades that remote, not the host. Keep it that way:
+  don't lift a remote's `load()` into the host's critical path.
+
 ## Second config instance (kill switch)
 
 Each `attune()` call is independent — own sources, own cache. A separately

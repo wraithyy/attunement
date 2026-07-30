@@ -141,6 +141,7 @@ get a `ConfigError` listing what each source said.
 |---|---|---|
 | `fromWindow(key)` | Reads `window[key]` | Config injected into `index.html` at deploy — zero extra request |
 | `fromJson(url, options?)` | Fetches and parses JSON | `app-config.json` served next to the bundle |
+| `merge(...sources)` | Runs sources in parallel, shallow-merges results (later wins) | Base config + per-environment overrides file |
 
 `fromJson` retries network errors, timeouts and 5xx with exponential backoff —
 defaults: 8 s per-attempt timeout, 2 retries, 300 ms base backoff; 4xx fails
@@ -158,6 +159,7 @@ A custom source is a one-liner (`() => unknown | Promise<unknown>`), and each
 | `attuneReact(options)` | `attunement/react` | Core + `{ Provider, use() }` (Suspense + error boundary) |
 | `fromJson(url, options?)` | both | JSON fetch source with timeout + retry |
 | `fromWindow(key)` | both | `window` global source |
+| `merge(...sources)` | both | Combine sources: parallel fetch, shallow merge, later wins |
 | `ConfigError` | both | Thrown/passed on validation failure; carries per-key issues |
 | `createTestProvider(config, overrides)` | `attunement/testing` | Synchronous Provider for tests |
 
