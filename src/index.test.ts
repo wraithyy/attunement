@@ -190,6 +190,24 @@ describe("fromJson", () => {
     vi.unstubAllGlobals();
   });
 
+  it("retries when the body read fails after headers arrived", async () => {
+    const brokenBody = {
+      ok: true,
+      json: () => Promise.reject(new TypeError("network error during body read")),
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(brokenBody)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ API_URL: "x" })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(
+      await fromJson("/app-config.json", { retries: 1, backoffMs: 0 })()
+    ).toEqual({ API_URL: "x" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    vi.unstubAllGlobals();
+  });
+
   it("does not retry when the caller's own signal aborted", async () => {
     const controller = new AbortController();
     const fetchMock = vi.fn((_: string, init: RequestInit) => {
