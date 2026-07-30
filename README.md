@@ -88,7 +88,11 @@ Non-React code uses the same cached load: `await appConfig.load()`.
 - With `fromWindow` (config injected into `index.html` at deploy) resolution is
   a microtask — the fallback never even flashes.
 - Invalid config → `ConfigError` with per-key issues → your `errorFallback`
-  instead of a white page.
+  instead of a white page. Missing keys get a did-you-mean suggestion against
+  the keys actually present: `API_URL: Required (did you mean "API_URl"?)`.
+- The loaded config is deep-frozen — accidental mutation throws in strict mode
+  instead of silently desyncing parts of your app. Need a mutable copy?
+  `structuredClone(config)`.
 
 ## Sources
 
