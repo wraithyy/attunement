@@ -2,6 +2,17 @@
 
 > Typed, validated runtime config for SPAs. The app attunes to its environment before first render.
 
+[![npm](https://img.shields.io/npm/v/attunement)](https://www.npmjs.com/package/attunement)
+[![CI](https://github.com/wraithyy/attunement/actions/workflows/ci.yml/badge.svg)](https://github.com/wraithyy/attunement/actions/workflows/ci.yml)
+[![license](https://img.shields.io/npm/l/attunement)](./LICENSE)
+![gzip size](https://img.shields.io/bundlejs/size/attunement)
+
+- **One build, any environment** — config loads at runtime, not at build time
+- **Schema-first** — types, validation and defaults from one definition, via [Standard Schema](https://standardschema.dev) (Zod, Valibot, ArkType — your pick)
+- **Race-free** — loading starts at module scope, React suspends until config is ready; components never see `undefined`
+- **Tiny & tree-shakable** — zero dependencies, ~1 kB core, ESM only
+- **Framework-agnostic core** — React adapter included, the core is plain TypeScript
+
 ## Why
 
 Build once, deploy anywhere. A SPA built with `import.meta.env` bakes its
@@ -17,14 +28,16 @@ pipeline.
 The catch is that runtime config arrives *at runtime* — untyped, unvalidated,
 and racing your first render. attunement closes that gap: define a schema once
 and get types, validation, defaults and a render gate from a single definition.
-Bring any [Standard Schema](https://standardschema.dev) library: Zod, Valibot,
-ArkType.
 
 ## Install
 
 ```sh
 pnpm add attunement
+# or npm install / yarn add
 ```
+
+React adapter needs React 19+ (it builds on `use()`). The core has no
+dependencies and works anywhere.
 
 ## Usage
 
@@ -72,6 +85,36 @@ Non-React code uses the same cached load: `await appConfig.load()`.
 - Invalid config → `ConfigError` with per-key issues → your `errorFallback`
   instead of a white page.
 
+## Sources
+
+Sources are tried in order; the first one that yields data wins.
+
+| Source | What it does | Typical use |
+|---|---|---|
+| `fromWindow(key)` | Reads `window[key]` | Config injected into `index.html` at deploy — zero extra request |
+| `fromJson(url)` | Fetches and parses JSON | `app-config.json` served next to the bundle |
+
+A source is just `() => unknown \| Promise<unknown>`. Returning
+`undefined`/`null` or throwing falls through to the next source; if none
+succeeds you get a `ConfigError` listing what each source said. Writing your
+own is a one-liner.
+
+Multiple independent configs per app are fine — each `attune()` call is its own
+instance with its own sources and cache (e.g. a polled `shutdown.json` kill
+switch next to the main config).
+
+## API
+
+| Export | Entry | Description |
+|---|---|---|
+| `attune(options)` | `attunement` | Core factory → `{ load() }`; promise starts immediately, result is cached |
+| `attuneReact(options)` | `attunement/react` | Core + `{ Provider, use() }` (Suspense + error boundary) |
+| `fromJson(url)` | both | JSON fetch source |
+| `fromWindow(key)` | both | `window` global source |
+| `ConfigError` | both | Thrown/passed on validation failure; carries per-key issues |
+
+Types flow from the schema — you never write generics.
+
 ## Framework-agnostic core
 
 ```ts
@@ -79,3 +122,7 @@ import { attune, fromJson } from "attunement";
 
 const config = await attune({ schema, sources: [fromJson("/app-config.json")] }).load();
 ```
+
+## License
+
+[MIT](./LICENSE) © Josef Kvapil
