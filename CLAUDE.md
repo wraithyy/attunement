@@ -7,8 +7,8 @@ Typed, validated runtime config for SPAs. OSS library, npm name `attunement`
 
 Build once, deploy anywhere: config loads at runtime (fetched JSON / HTML
 inject), gets validated against a schema, and the app never renders before
-config is available. Generalized from the pattern used in real apps (App A,
-App B) — see [`docs/plan.md`](docs/plan.md) for the roadmap and case
+config is available. Generalized from the pattern hand-rolled in two
+production apps — see [`docs/plan.md`](docs/plan.md) for the roadmap and case
 studies.
 
 ## Architecture — binding principles

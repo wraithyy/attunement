@@ -12,35 +12,32 @@ loading, validation and delivery of that config; the schema stays app-owned.
 Two production apps already hand-roll this. attunement is their common core,
 extracted and hardened.
 
-### App A (`frontend/apps/web/src/config/runtime-config.ts`)
+### App A
 
 - `fetch("/app-config.json")` → Zod `safeParse` → module-level cache.
 - Keys: `API_URL`, `ENABLE_MOCKING`, `LOG_LEVEL`, `LOG_CONTEXT`. Defaults via
   `.default()` keep already-deployed config files bootable when keys are added.
 - Async bootstrap in `main.tsx`: await config, then `setApiBaseUrl()`, logger
   setup, then render. ConfigProvider + `useConfig()` context.
-- Dev override panel for runtime config exists as a devtool
-  (`runtime-config-panel`).
+- Dev override panel for runtime config exists as a devtool.
 
 What attunement replaces: the loader, the cache, the provider, the async
 bootstrap (→ `onLoad` + Suspense). What stays in the app: the schema, the
 panel (until `attunement/devtools` exists).
 
-### App B (`src/utils/_env.ts`)
+### App B
 
 - Same fetch + Zod + cache shape, `.then()` around `root.render`.
 - **Coercion everywhere**: config is produced by env-var substitution in CI, so
-  every value arrives as a string — `stringOrBoolean` preprocess,
-  `z.coerce.number()` for limits (`MAX_UPLOAD_PHOTOS`,
-  `MAX_IMAGE_SIZE`...). Any library serving this app must not assume typed
-  JSON.
-- Larger surface: OAuth/analytics keys (`GOOGLE_GA_KEY`, `GOOGLE_RECAPTCHA_KEY`,
-  `THIRD_PARTY_API_KEY`), `BASE_PATH`, feature toggles.
-- **Second runtime file**: `shutdown.json` polled as a kill switch → the
+  every value arrives as a string — string-or-boolean preprocess,
+  `z.coerce.number()` for numeric limits. Any library serving this app must
+  not assume typed JSON.
+- Larger surface: OAuth/analytics keys, third-party API keys, `BASE_PATH`,
+  feature toggles.
+- **Second runtime file**: `shutdown.json` read as a kill switch → the
   library must support multiple independent `attune()` instances per app.
-- Per-environment config files committed in repo (`config/app-config.json`,
-  `config/app-config.demo.json`) → validates the config-as-code + CI check
-  roadmap item.
+- Per-environment config files committed in repo → validates the
+  config-as-code + CI check roadmap item.
 
 ## Design pillars
 
@@ -69,7 +66,7 @@ panel (until `attunement/devtools` exists).
 - [x] `attuneReact()`: Suspense Provider, error boundary, typed `use()`
 - [x] tsup build, ESM + d.ts, two entries
 
-### v0.2 — adoption blockers (what App A/App B need to migrate)
+### v0.2 — adoption blockers (what the source apps need to migrate)
 
 - [x] Test helpers: `createTestProvider(overrides)` — partial override over
       schema defaults, synchronous, no Suspense in tests
