@@ -83,6 +83,28 @@ describe("attune", () => {
     expect(seen).toEqual(["https://api.example.com", "warn"]);
   });
 
+  it("suggests the nearest raw key on validation failure (did-you-mean)", async () => {
+    const promise = attune({
+      schema,
+      sources: [() => ({ API_URl: "https://api.example.com" })],
+    }).load();
+
+    await expect(promise).rejects.toThrow('did you mean "API_URl"?');
+  });
+
+  it("deep-freezes the loaded config", async () => {
+    const config = await attune({
+      schema: z.object({
+        API_URL: z.string(),
+        FLAGS: z.object({ beta: z.boolean() }),
+      }),
+      sources: [() => ({ API_URL: "x", FLAGS: { beta: true } })],
+    }).load();
+
+    expect(Object.isFrozen(config)).toBe(true);
+    expect(Object.isFrozen(config.FLAGS)).toBe(true);
+  });
+
   it("rejects when onLoad throws", async () => {
     const promise = attune({
       schema,
@@ -124,9 +146,66 @@ describe("fromJson", () => {
       vi.fn(async () => new Response("nope", { status: 503 }))
     );
 
-    await expect(fromJson("/app-config.json")()).rejects.toThrow(
+    await expect(fromJson("/app-config.json", { retries: 0 })()).rejects.toThrow(
       "/app-config.json: HTTP 503"
     );
+    vi.unstubAllGlobals();
+  });
+
+  it("retries 5xx and network errors until a source succeeds", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("nope", { status: 503 }))
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ API_URL: "x" })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(
+      await fromJson("/app-config.json", { retries: 2, backoffMs: 0 })()
+    ).toEqual({ API_URL: "x" });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    vi.unstubAllGlobals();
+  });
+
+  it("does not retry 4xx", async () => {
+    const fetchMock = vi.fn(async () => new Response("nope", { status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      fromJson("/app-config.json", { retries: 3, backoffMs: 0 })()
+    ).rejects.toThrow("HTTP 404");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
+  it("reports attempt count when retries are exhausted", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("nope", { status: 500 }))
+    );
+
+    await expect(
+      fromJson("/app-config.json", { retries: 2, backoffMs: 0 })()
+    ).rejects.toThrow("3 attempts");
+    vi.unstubAllGlobals();
+  });
+
+  it("aborts an attempt after timeoutMs", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener("abort", () =>
+              reject(init.signal?.reason)
+            );
+          })
+      )
+    );
+
+    await expect(
+      fromJson("/app-config.json", { timeoutMs: 10, retries: 0 })()
+    ).rejects.toThrow(/timeout|timed out/i);
     vi.unstubAllGlobals();
   });
 });
