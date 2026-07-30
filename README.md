@@ -162,8 +162,30 @@ A custom source is a one-liner (`() => unknown | Promise<unknown>`), and each
 | `merge(...sources)` | both | Combine sources: parallel fetch, shallow merge, later wins |
 | `ConfigError` | both | Thrown/passed on validation failure; carries per-key issues |
 | `createTestProvider(config, overrides)` | `attunement/testing` | Synchronous Provider for tests |
+| `attunement` CLI (`check`, `docs`) | bin / `attunement/cli` | Validate config files in CI, generate schema docs |
 
 Types flow from the schema — you never write generics.
+
+## CI check
+
+Broken config should fail the pipeline, not the boot. `attunement check`
+validates config files against the same schema the app uses:
+
+```sh
+attunement check --schema src/config-schema.ts config/*.json --diff
+```
+
+- Validation failures print the same per-key, did-you-mean errors as at runtime
+- `--diff` fails when files disagree on top-level keys (key added to prod,
+  forgotten in stage)
+- Secret hygiene warnings: keys named like credentials (`*_SECRET`, `*_TOKEN`,
+  `*_API_KEY`) or values that look like generated secrets — SPA config is
+  public, nothing in it is secret
+- `attunement docs --schema ...` renders a markdown table of keys, types,
+  defaults and `.describe()` descriptions (zod schemas)
+
+`--schema` takes any module exporting the schema (`schema` or default export);
+`.ts` works directly on Node ≥ 22.18. Exit codes: 0 ok, 1 failure, 2 usage.
 
 ## Recipes
 
