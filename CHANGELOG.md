@@ -1,5 +1,12 @@
 # attunement
 
+## 0.4.0
+
+### Minor Changes
+
+- 9d74bec: `attunement/devtools`: dev override panel generated from the schema (enum → select, boolean → checkbox) — standalone floating widget (`AttunementDevtools`) or TanStack Devtools plugin (`attunementDevtoolsPlugin`). `fromOverrides()` source layers localStorage overrides + `?config.KEY=value` URL bootstrap over real config via `merge`, validated by the schema like everything else.
+- cfaf690: `attunement/vite`: Vite plugin — dev server serves the config file (full reload on change), optional `injectKey` injects config into index.html for `fromWindow` (real content in dev, deploy-replaceable placeholder in builds).
+
 ## 0.3.0
 
 ### Minor Changes
