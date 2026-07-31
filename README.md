@@ -20,7 +20,7 @@
 [Devtools](#devtools) · [CI check](#ci-check) · [Recipes](./docs/recipes.md)**
 
 Pre-1.0: the API is small and settling — minor versions may still move it.
-Roadmap and design notes in [docs/plan.md](./docs/plan.md).
+Design notes in [docs/design.md](./docs/design.md).
 
 ## Why
 

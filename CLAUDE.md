@@ -8,7 +8,7 @@ Typed, validated runtime config for SPAs. OSS library, npm name `attunement`
 Build once, deploy anywhere: config loads at runtime (fetched JSON / HTML
 inject), gets validated against a schema, and the app never renders before
 config is available. Generalized from the pattern hand-rolled in two
-production apps — see [`docs/plan.md`](docs/plan.md) for the roadmap and case
+production apps — see [`docs/design.md`](docs/design.md) for the design pillars and case
 studies.
 
 ## Architecture — binding principles
@@ -43,7 +43,7 @@ src/index.ts       core: attune(), Source, fromJson, fromWindow, ConfigError
 src/react.tsx      attuneReact(): Provider (Suspense + ConfigBoundary), use()
 src/index.test.ts  core tests (Vitest)
 tsup.config.ts     one entry per file = one entry in package.json exports
-docs/plan.md       roadmap + how the source apps do it today
+docs/design.md     design pillars, case studies, out of scope
 ```
 
 ## Commands
