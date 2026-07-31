@@ -9,10 +9,15 @@
 
 - **One build, any environment** — config loads at runtime; changing an API URL is a redeploy, not a rebuild
 - **Schema-first** — types, validation and defaults from one definition, via [Standard Schema](https://standardschema.dev) (Zod, Valibot, ArkType)
-- **Race-free** — React renders only after config is loaded and valid; components never see `undefined`
+- **Race-free** — in React nothing renders before config is loaded and valid (Suspense gate); elsewhere `await load()` before bootstrap
 - **Test-ready** — `createTestProvider` gives components config synchronously, no fetch, no mocks
+- **Tooling included** — `attunement check` validates config files in CI, dev override panel (standalone or TanStack Devtools), Vite plugin with reload-on-change
 - **Tiny** — zero dependencies, ~1 kB core, tree-shakable ESM
-- **Framework-agnostic core** — React 19 adapter included, plain `load()` everywhere else; multiple independent instances per app
+- **Framework-agnostic core** — React 19 adapter included; Angular/Vue/vanilla use the same core ([recipes](./docs/recipes.md#other-frameworks)); multiple independent instances per app
+
+**[Why](#why) · [Install](#install) · [Quick start](#quick-start) · [API](#api) ·
+[Testing](#testing) · [Sources](#sources) · [Vite plugin](#vite-plugin) ·
+[Devtools](#devtools) · [CI check](#ci-check) · [Recipes](./docs/recipes.md)**
 
 Pre-1.0: the API is small and settling — minor versions may still move it.
 Roadmap and design notes in [docs/plan.md](./docs/plan.md).
@@ -30,13 +35,13 @@ library is for.
 
 ### vs. the alternatives
 
-| | Runtime (no rebuild) | Schema validation | Blocks render until ready |
-|---|:---:|:---:|:---:|
-| **attunement** | ✅ | ✅ any Standard Schema | ✅ Suspense gate |
-| `import.meta.env` / [import-meta-env](https://github.com/runtime-env/import-meta-env) | ❌ build-time | ❌ (generated types only) | — |
-| hand-rolled `window._env_` + `envsubst` | ✅ | ❌ unless you write it | ❌ script-order luck |
-| `runtime-env-cra`, `react-inject-env` | ✅ | ❌ | ❌ (both unmaintained for years) |
-| ConfigCat / Unleash / LaunchDarkly | ✅ | flag-level only | SDK-specific |
+| | Runtime (no rebuild) | Schema validation | Typed config | Blocks render until ready | Tooling | Runtime cost |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| **attunement** | ✅ | ✅ any Standard Schema, in the running app | ✅ inferred from schema | ✅ Suspense gate | dev override panel, CI check CLI, Vite plugin | ~1 kB, zero deps |
+| `import.meta.env` / [import-meta-env](https://github.com/runtime-env/import-meta-env) | ❌ build-time | ⚠️ primitive type check at inject time, nothing at runtime | ✅ generated `.d.ts` | — | editor types | none (build-time) |
+| hand-rolled `window._env_` + `envsubst` | ✅ | ❌ unless you write it | ❌ hand-written | ❌ DIY — a stale or 404'd `env.js` fails silently | ❌ | none |
+| `runtime-env-cra`, `react-inject-env` (dormant since ~2021) | ✅ | ❌ | ❌ | ❌ | ❌ | tiny |
+| ConfigCat / Unleash / LaunchDarkly | ✅ | flag-level only | ⚠️ per-flag getters | SDK-specific opt-in (e.g. `asyncWithLDProvider`) | ✅ hosted dashboard, targeting UI | full SDK (tens of kB) + network |
 
 Feature-flag services solve a different problem (targeting, rollout,
 experimentation) — a `Source` can wrap their SDK if you use both.
@@ -47,8 +52,10 @@ experimentation) — a `Source` can wrap their SDK if you use both.
 pnpm add attunement   # or npm / yarn
 ```
 
-Browser SPAs only (no SSR — config lives server-side there). The React adapter
-needs React 19+; the zero-dependency core runs anywhere with `fetch`.
+Browser SPAs only (no SSR — config lives server-side there). Islands
+frameworks (Astro, Qwik) work the same way inside client-hydrated islands;
+server-rendered parts never call it. The React adapter needs React 19+; the
+zero-dependency core runs anywhere with `fetch`.
 
 ## Quick start
 
@@ -84,8 +91,18 @@ createRoot(el).render(
 const { API_URL } = appConfig.use();
 ```
 
-Non-React code uses the same cached load: `await appConfig.load()` — see
-[recipes](./docs/recipes.md) for OAuth clients and loggers.
+No React? The core is the same thing minus the Provider — await it before
+bootstrap (Angular `APP_INITIALIZER`, Vue `main.ts` — [recipes](./docs/recipes.md#other-frameworks)):
+
+```ts
+import { attune, fromJson } from "attunement";
+
+export const appConfig = attune({ schema, sources: [fromJson("/app-config.json")] });
+await appConfig.load(); // typed, validated, cached
+```
+
+Non-React code in a React app uses the same cached load: `await appConfig.load()`
+— see [recipes](./docs/recipes.md) for OAuth clients and loggers.
 
 **Local dev:** put `app-config.json` in Vite's `public/` directory — it's
 served at `/app-config.json` in dev and copied next to the bundle on build.
@@ -97,6 +114,23 @@ public/app-config.json   → served at /app-config.json
 src/config.ts            → attuneReact() + schema
 src/main.tsx             → Provider
 ```
+
+## API
+
+| Export | Entry | Description |
+|---|---|---|
+| `attune(options)` | `attunement` | Core factory → `{ load() }`; promise starts immediately, result is cached |
+| `attuneReact(options)` | `attunement/react` | Core + `{ Provider, use() }` (Suspense + error boundary) |
+| `fromJson(url, options?)` | both | JSON fetch source with timeout + retry |
+| `fromWindow(key)` | both | `window` global source |
+| `merge(...sources)` | both | Combine sources: parallel fetch, shallow merge, later wins |
+| `ConfigError` | both | Thrown/passed on validation failure; carries per-key issues |
+| `createTestProvider(config, overrides)` | `attunement/testing` | Synchronous Provider for tests — test-only |
+| `attunement` CLI (`check`, `docs`) | bin / `attunement/cli` | Config validation in CI, schema docs — CI-only, never shipped |
+| `AttunementDevtools` / `attunementDevtoolsPlugin` / `fromOverrides` | `attunement/devtools` | Dev override panel — dev-only, gate the import |
+| `attunement(options?)` | `attunement/vite` | Vite plugin — build-time only, lives in `vite.config.ts` |
+
+Types flow from the schema — you never write generics.
 
 ## Testing
 
@@ -148,23 +182,67 @@ defaults: 8 s per-attempt timeout, 2 retries, 300 ms base backoff; 4xx fails
 immediately. Tune via `fromJson(url, { timeoutMs, retries, backoffMs, ...fetchInit })`.
 
 A custom source is a one-liner (`() => unknown | Promise<unknown>`), and each
-`attune()` call is an independent instance — see the
-[kill-switch recipe](./docs/recipes.md#second-config-instance-kill-switch).
+`attune()` call is an independent instance — e.g. a separately deployed
+maintenance flag next to the main config
+([kill-switch recipe](./docs/recipes.md#second-config-instance-kill-switch)).
 
-## API
 
-| Export | Entry | Description |
-|---|---|---|
-| `attune(options)` | `attunement` | Core factory → `{ load() }`; promise starts immediately, result is cached |
-| `attuneReact(options)` | `attunement/react` | Core + `{ Provider, use() }` (Suspense + error boundary) |
-| `fromJson(url, options?)` | both | JSON fetch source with timeout + retry |
-| `fromWindow(key)` | both | `window` global source |
-| `merge(...sources)` | both | Combine sources: parallel fetch, shallow merge, later wins |
-| `ConfigError` | both | Thrown/passed on validation failure; carries per-key issues |
-| `createTestProvider(config, overrides)` | `attunement/testing` | Synchronous Provider for tests |
-| `attunement` CLI (`check`, `docs`) | bin / `attunement/cli` | Validate config files in CI, generate schema docs |
+## Vite plugin
 
-Types flow from the schema — you never write generics.
+Optional — Vite's `public/` directory covers the basics; the plugin adds
+reload-on-change and the HTML inject:
+
+```ts
+// vite.config.ts
+import { attunement } from "attunement/vite";
+
+export default defineConfig({
+  plugins: [attunement({ configFile: "config/app-config.json" })],
+});
+```
+
+- Dev server serves the file at `/app-config.json` and **full-reloads on
+  change** — edit config, see the app re-attune
+- `injectKey: "__APP_CONFIG__"` additionally injects the config into
+  `index.html` for `fromWindow`: real content in dev, a
+  `"__ATTUNEMENT_CONFIG__"` placeholder in builds for your deploy pipeline to
+  replace
+
+Astro (and other Vite-based frameworks) pass it through the `vite` key of
+their own config.
+
+## Devtools
+
+Dev-only override panel generated from your schema — enum → select,
+boolean → checkbox. Works standalone or as a TanStack Devtools plugin:
+
+```tsx
+// config.ts — let overrides participate in loading (dev only, merged over real config)
+import { fromOverrides } from "attunement/devtools";
+
+const devOverrides = import.meta.env.DEV ? [fromOverrides()] : [];
+
+export const appConfig = attuneReact({
+  schema,
+  sources: [merge(fromJson("/app-config.json"), ...devOverrides)],
+});
+```
+
+```tsx
+// App.tsx — standalone floating widget…
+import { AttunementDevtools, attunementDevtoolsPlugin } from "attunement/devtools";
+
+{import.meta.env.DEV && <AttunementDevtools config={appConfig} />}
+
+// …or as a TanStack Devtools plugin instead
+<TanStackDevtools plugins={[attunementDevtoolsPlugin(appConfig)]} />
+```
+
+Overrides live in localStorage, validated by the schema on load like any other
+config; saving reloads the page (config loads once per page load, so a reload
+is how changes apply). `?config.KEY=value` in the URL bootstraps an override —
+handy for sharing a repro link. To keep devtools out of the production bundle
+entirely, gate the import too (dynamic `import()` behind a dev flag).
 
 ## CI check
 
@@ -195,8 +273,8 @@ environment (Helm, nginx `envsubst`, CDN), second instance as a kill switch.
 
 ## Contributing
 
-Issues and PRs welcome — run `pnpm test && pnpm typecheck && pnpm build`
-before pushing. Releases via changesets; changelog on
+Issues and PRs welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md). Releases
+via changesets; changelog on
 [GitHub Releases](https://github.com/wraithyy/attunement/releases).
 
 ## License
