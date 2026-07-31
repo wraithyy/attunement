@@ -121,6 +121,11 @@ async function main(): Promise<number> {
       failed = true;
       console.error(`DIFF ${file}: missing key "${key}" present in other files`);
     }
+  } else if (values.diff) {
+    // a silent no-op in CI is worse than a loud one — say the diff didn't run
+    console.warn(
+      `warn --diff needs at least two files, got ${loaded.length} — key diff skipped`
+    );
   }
 
   return failed ? 1 : 0;
