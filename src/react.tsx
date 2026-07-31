@@ -41,9 +41,13 @@ interface BoundaryProps {
   children: ReactNode;
 }
 
-// no bare `process` — the guard keeps unbundled browser ESM from throwing
+// two detection paths: bundlers doing define-replacement need the dotted
+// process.env.NODE_ENV literal (no optional chain — it breaks the match),
+// Vite browser ESM has no `process` at all and needs import.meta.env.DEV.
+// The cast: import.meta typing depends on the consumer's bundler types.
 const DEV =
-  typeof process !== "undefined" && process.env?.NODE_ENV !== "production";
+  (typeof process !== "undefined" && process.env.NODE_ENV !== "production") ||
+  (import.meta as { env?: { DEV?: boolean } }).env?.DEV === true;
 
 /**
  * Default errorFallback: names the failure instead of a white page. The
