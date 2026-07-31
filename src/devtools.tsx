@@ -76,8 +76,8 @@ export function fromOverrides(storageKey = DEFAULT_KEY): Source {
 
 // --- panel ---
 
-export interface DevtoolsProps {
-  config: AttunedReact<Record<string, unknown>>;
+export interface DevtoolsProps<T extends Record<string, unknown> = Record<string, unknown>> {
+  config: AttunedReact<T>;
   /** Must match the key given to fromOverrides. */
   storageKey?: string;
 }
@@ -153,7 +153,10 @@ function FieldInput({
  * checkbox, number/string → input. Saving writes localStorage and reloads —
  * config is load-once by design, a reload is the honest apply.
  */
-export function AttunementDevtoolsPanel({ config, storageKey = DEFAULT_KEY }: DevtoolsProps) {
+export function AttunementDevtoolsPanel<T extends Record<string, unknown>>({
+  config,
+  storageKey = DEFAULT_KEY,
+}: DevtoolsProps<T>) {
   const [loaded, setLoaded] = useState<Record<string, unknown> | null>(null);
   const [overrides, setOverrides] = useState<Record<string, unknown>>(() =>
     readOverrides(storageKey)
@@ -244,7 +247,9 @@ export function AttunementDevtoolsPanel({ config, storageKey = DEFAULT_KEY }: De
 }
 
 /** Standalone floating widget — a toggle button fixed bottom-right. */
-export function AttunementDevtools(props: DevtoolsProps) {
+export function AttunementDevtools<T extends Record<string, unknown>>(
+  props: DevtoolsProps<T>
+) {
   const [open, setOpen] = useState(false);
   return (
     <div style={{ position: "fixed", bottom: 16, right: 16, zIndex: 99999 }}>
@@ -269,8 +274,8 @@ export function AttunementDevtools(props: DevtoolsProps) {
  *
  *   <TanStackDevtools plugins={[attunementDevtoolsPlugin(appConfig)]} />
  */
-export function attunementDevtoolsPlugin(
-  config: AttunedReact<Record<string, unknown>>,
+export function attunementDevtoolsPlugin<T extends Record<string, unknown>>(
+  config: AttunedReact<T>,
   storageKey?: string
 ): { name: string; render: ReactNode } {
   return {
