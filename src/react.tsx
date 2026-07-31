@@ -15,7 +15,11 @@ export interface ProviderProps {
   children: ReactNode;
   /** Shown while config loads. With fromWindow it never appears. */
   fallback?: ReactNode;
-  /** Shown when no source succeeds or validation fails. */
+  /**
+   * Shown when no source succeeds or validation fails. Defaults to a minimal
+   * "Configuration failed to load." block (error details in dev only);
+   * pass null to render nothing.
+   */
   errorFallback?: ReactNode | ((error: Error) => ReactNode);
 }
 
@@ -37,6 +41,26 @@ interface BoundaryProps {
   children: ReactNode;
 }
 
+// no bare `process` — the guard keeps unbundled browser ESM from throwing
+const DEV =
+  typeof process !== "undefined" && process.env?.NODE_ENV !== "production";
+
+/**
+ * Default errorFallback: names the failure instead of a white page. The
+ * message (config keys, source URLs) is dev-only — it doesn't belong in
+ * front of end users.
+ */
+function DefaultErrorFallback({ error }: { error: Error }) {
+  return (
+    <div role="alert" style={{ fontFamily: "system-ui, sans-serif", padding: 16 }}>
+      <strong>Configuration failed to load.</strong>
+      {DEV && (
+        <pre style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{error.message}</pre>
+      )}
+    </div>
+  );
+}
+
 class ConfigBoundary extends Component<
   BoundaryProps,
   { error: Error | null }
@@ -51,7 +75,8 @@ class ConfigBoundary extends Component<
     const { error } = this.state;
     if (error) {
       const { fallback } = this.props;
-      return typeof fallback === "function" ? fallback(error) : (fallback ?? null);
+      if (fallback === undefined) return <DefaultErrorFallback error={error} />;
+      return typeof fallback === "function" ? fallback(error) : fallback;
     }
     return this.props.children;
   }

@@ -76,6 +76,10 @@ interface ZodLikeDef {
   /** zod 4: "boolean", "default"... */
   type?: string;
   innerType?: ZodLikeField;
+  /** zod 3 ZodEffects (preprocess/refine) wraps here */
+  schema?: ZodLikeField;
+  /** zod 4 pipe (preprocess/stringbool): out is the result type */
+  out?: ZodLikeField;
   /** zod 3: thunk; zod 4: plain value */
   defaultValue?: (() => unknown) | unknown;
   /** zod 3 enum literals */
@@ -97,7 +101,8 @@ function unwrap(field: ZodLikeField): {
   let defaultValue: unknown;
   while (true) {
     const def = current._def;
-    const inner = def?.innerType;
+    if (!def) break;
+    const inner = def.innerType ?? def.schema ?? def.out;
     if (!inner) break;
     if (def.typeName === "ZodDefault" || def.type === "default") {
       defaultValue =

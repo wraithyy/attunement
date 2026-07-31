@@ -8,7 +8,7 @@
 ![gzip size](https://img.shields.io/bundlejs/size/attunement)
 
 - **One build, any environment** — config loads at runtime; changing an API URL is a redeploy, not a rebuild
-- **Schema-first** — types, validation and defaults from one definition, via [Standard Schema](https://standardschema.dev) (Zod, Valibot, ArkType)
+- **Schema-first** — types, validation and defaults from one definition, via [Standard Schema](https://standardschema.dev) (Zod, Valibot, ArkType). Schema introspection (devtools panel, `attunement docs`) is zod-only for now — the spec has no introspection API
 - **Race-free** — in React nothing renders before config is loaded and valid (Suspense gate); elsewhere `await load()` before bootstrap
 - **Test-ready** — `createTestProvider` gives components config synchronously, no fetch, no mocks
 - **Tooling included** — `attunement check` validates config files in CI, dev override panel (standalone or TanStack Devtools), Vite plugin with reload-on-change
@@ -77,6 +77,12 @@ export const appConfig = attuneReact({
 });
 ```
 
+`onLoad` is the **only** hook guaranteed to finish before the first render —
+it's awaited inside the load promise itself. `appConfig.load().then(...)` looks
+equivalent but isn't: it races React's suspense resumption and only wins by
+import-order luck. Wire up anything render-critical (API base URL, router
+basepath, logger) in `onLoad`.
+
 ```tsx
 // main.tsx
 createRoot(el).render(
@@ -90,6 +96,11 @@ createRoot(el).render(
 // anywhere under Provider — synchronous, fully typed, never undefined
 const { API_URL } = appConfig.use();
 ```
+
+Both fallbacks are optional: without `errorFallback` a failed load renders a
+minimal "Configuration failed to load." notice (error details included in dev
+builds only — the message names config keys and source URLs, which end users
+shouldn't see).
 
 No React? The core is the same thing minus the Provider — await it before
 bootstrap (Angular `APP_INITIALIZER`, Vue `main.ts` — [recipes](./docs/recipes.md#other-frameworks)):
@@ -113,6 +124,38 @@ In production your deploy pipeline replaces it per environment
 public/app-config.json   → served at /app-config.json
 src/config.ts            → attuneReact() + schema
 src/main.tsx             → Provider
+```
+
+### Migrating from a hand-rolled loader
+
+The classic hand-rolled shape gates render with `.then()`:
+
+```tsx
+// before
+fetchConfig().then((config) => {
+  setApiBaseUrl(config.API_URL);
+  root.render(<App />);
+});
+```
+
+Don't keep the `.then()` and swap the loader — that renders the tree only
+after the promise resolves, so the Provider has nothing to gate and your
+`fallback`/`errorFallback` become dead code. Nothing warns about it; the app
+still works. Migrate all three parts:
+
+```tsx
+// after: wiring → onLoad, gating → Provider, render is unconditional
+export const appConfig = attuneReact({
+  schema,
+  sources: [fromJson("/app-config.json")],
+  onLoad: (config) => setApiBaseUrl(config.API_URL),
+});
+
+root.render(
+  <appConfig.Provider fallback={<Splash />}>
+    <App />
+  </appConfig.Provider>
+);
 ```
 
 ## API
@@ -211,7 +254,14 @@ reload-on-change and the HTML inject:
 import { attunement } from "attunement/vite";
 
 export default defineConfig({
-  plugins: [attunement({ configFile: "config/app-config.json" })],
+  plugins: [
+    attunement({
+      configFile: "config/app-config.json",
+      // required for the fromWindow("__APP_CONFIG__") source in Quick start —
+      // without it that source always misses and silently falls through
+      injectKey: "__APP_CONFIG__",
+    }),
+  ],
 });
 ```
 
@@ -247,20 +297,33 @@ export const appConfig = attuneReact({
 ```
 
 ```tsx
-// App.tsx — standalone floating widget…
-import { AttunementDevtools, attunementDevtoolsPlugin } from "attunement/devtools";
+// App.tsx — lazy import: `import.meta.env.DEV &&` removes the call, NOT the
+// import — a static import ships the whole panel in your production bundle
+import { lazy } from "react";
+
+const AttunementDevtools = lazy(() =>
+  import("attunement/devtools").then((m) => ({ default: m.AttunementDevtools }))
+);
 
 {import.meta.env.DEV && <AttunementDevtools config={appConfig} />}
+```
 
-// …or as a TanStack Devtools plugin instead
+As a TanStack Devtools plugin instead — same rule, keep the
+`attunement/devtools` import behind the same dynamic boundary as your
+`<TanStackDevtools>` setup:
+
+```tsx
 <TanStackDevtools plugins={[attunementDevtoolsPlugin(appConfig)]} />
 ```
+
+The standalone widget sits bottom-right by default; pass
+`position="bottom-left"` (or `top-*`) when TanStack Query devtools or
+react-scan already live there.
 
 Overrides live in localStorage, validated by the schema on load like any other
 config; saving reloads the page (config loads once per page load, so a reload
 is how changes apply). `?config.KEY=value` in the URL bootstraps an override —
-handy for sharing a repro link. To keep devtools out of the production bundle
-entirely, gate the import too (dynamic `import()` behind a dev flag).
+handy for sharing a repro link.
 
 ## CI check
 

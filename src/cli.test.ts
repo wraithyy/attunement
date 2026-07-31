@@ -103,6 +103,29 @@ describe("docsTable", () => {
     ]);
   });
 
+  // the all-strings recipe wraps fields in z.preprocess — zod 3 ZodEffects
+  // (_def.schema) and zod 4 pipe (_def.out) must both unwrap to the real type
+  it("introspects through z.preprocess (recipe pattern)", () => {
+    const boolish = (v: unknown) => v === "true" || v === true;
+    const v3 = introspectShape(
+      z.object({
+        ENABLE_RECAPTCHA: z.preprocess(boolish, z.boolean()).optional().default(false),
+        MODE: z.preprocess((v) => v, z.enum(["a", "b"])),
+      })
+    );
+    const v4 = introspectShape(
+      z4.object({
+        ENABLE_RECAPTCHA: z4.preprocess(boolish, z4.boolean().default(false)),
+        MODE: z4.preprocess((v) => v, z4.enum(["a", "b"])),
+      })
+    );
+
+    for (const shape of [v3, v4]) {
+      expect(shape[0]).toMatchObject({ key: "ENABLE_RECAPTCHA", type: "boolean" });
+      expect(shape[1]).toMatchObject({ key: "MODE", type: "enum", values: ["a", "b"] });
+    }
+  });
+
   it("throws a helpful error for non-introspectable schemas", () => {
     const opaque = { "~standard": { validate: () => ({ value: {} }) } };
     // duck-typed introspection needs a zod-like .shape

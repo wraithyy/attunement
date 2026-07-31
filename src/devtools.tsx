@@ -258,13 +258,31 @@ export function AttunementDevtoolsPanel<T extends Record<string, unknown>>({
   );
 }
 
-/** Standalone floating widget — a toggle button fixed bottom-right. */
-export function AttunementDevtools<T extends Record<string, unknown>>(
-  props: DevtoolsProps<T>
-) {
+export type DevtoolsPosition =
+  | "bottom-right"
+  | "bottom-left"
+  | "top-right"
+  | "top-left";
+
+const POSITIONS: Record<DevtoolsPosition, CSSProperties> = {
+  "bottom-right": { bottom: 16, right: 16 },
+  "bottom-left": { bottom: 16, left: 16 },
+  "top-right": { top: 16, right: 16 },
+  "top-left": { top: 16, left: 16 },
+};
+
+/**
+ * Standalone floating widget — a toggle button, fixed bottom-right by
+ * default. Bottom-right is prime real estate (TanStack Query devtools,
+ * react-scan) — use `position` to dodge a collision.
+ */
+export function AttunementDevtools<T extends Record<string, unknown>>({
+  position = "bottom-right",
+  ...props
+}: DevtoolsProps<T> & { position?: DevtoolsPosition }) {
   const [open, setOpen] = useState(false);
   return (
-    <div style={{ position: "fixed", bottom: 16, right: 16, zIndex: 99999 }}>
+    <div style={{ position: "fixed", zIndex: 99999, ...POSITIONS[position] }}>
       {open && (
         // panel's maxHeight:100% is inert in an auto-height parent — cap here
         <div style={{ marginBottom: 8, maxHeight: "70vh", overflowY: "auto" }}>
