@@ -97,6 +97,10 @@ const styles = {
     padding: 12,
     borderRadius: 8,
     minWidth: 320,
+    // host shell (TanStack Devtools) clips overflow — panel must scroll itself
+    maxHeight: "100%",
+    overflowY: "auto",
+    boxSizing: "border-box",
   },
   row: { display: "flex", gap: 8, alignItems: "center", marginBottom: 6 },
   key: { flex: "0 0 40%", overflow: "hidden", textOverflow: "ellipsis" },
@@ -260,7 +264,8 @@ export function AttunementDevtools<T extends Record<string, unknown>>(
   return (
     <div style={{ position: "fixed", bottom: 16, right: 16, zIndex: 99999 }}>
       {open && (
-        <div style={{ marginBottom: 8 }}>
+        // panel's maxHeight:100% is inert in an auto-height parent — cap here
+        <div style={{ marginBottom: 8, maxHeight: "70vh", overflowY: "auto" }}>
           <AttunementDevtoolsPanel {...props} />
         </div>
       )}
