@@ -95,7 +95,7 @@ panel (until `attunement/devtools` exists).
       Devtools plugin
 - [x] `attunement/vite`: dev server serves the config file + reload on change,
       HTML placeholder inject for `fromWindow` deploys
-- [ ] Config fingerprint: hash + optional meta (`_version`, `_generatedAt`)
+- [x] Config fingerprint: hash + optional meta (`_version`, `_generatedAt`)
       exposed for Sentry scope / log prefix
 
 ### Explicitly out of scope
