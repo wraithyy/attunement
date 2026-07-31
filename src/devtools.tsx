@@ -102,11 +102,13 @@ const styles = {
     overflowY: "auto",
     boxSizing: "border-box",
   },
-  row: { display: "flex", gap: 8, alignItems: "center", marginBottom: 6 },
+  // explicit height: TanStack Devtools shell CSS (`> * > * { height: 100% }`)
+  // stretches every panel child to the full shell height otherwise
+  row: { display: "flex", gap: 8, alignItems: "center", marginBottom: 6, height: "auto" },
   key: { flex: "0 0 40%", overflow: "hidden", textOverflow: "ellipsis" },
   input: { flex: 1, background: "#2d3748", color: "inherit", border: "1px solid #4a5568", borderRadius: 4, padding: "2px 6px", fontSize: 12 },
   button: { background: "#2b6cb0", color: "white", border: 0, borderRadius: 4, padding: "4px 10px", cursor: "pointer", marginRight: 8 },
-  note: { opacity: 0.7, marginTop: 8 },
+  note: { opacity: 0.7, marginTop: 8, height: "auto" },
 } satisfies Record<string, CSSProperties>;
 
 function FieldInput({
@@ -215,7 +217,7 @@ export function AttunementDevtoolsPanel<T extends Record<string, unknown>>({
           />
         </div>
       ))}
-      <div>
+      <div style={{ height: "auto" }}>
         <button
           style={styles.button}
           onClick={() => {
