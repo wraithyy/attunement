@@ -12,15 +12,16 @@ pnpm build       # tsup → dist
 ```
 
 All three must pass before pushing. Node ≥ 22.18 (the CLI relies on native
-TS type stripping), pnpm 10.
+TS type stripping), pnpm 10. Single test file: `pnpm vitest run src/index.test.ts`.
 
 ## Workflow
 
 - Gitflow: branch from `develop` (`feat/...`, `fix/...`), PR back to
   `develop`. `main` is release-only — `develop` → `main` PRs cut releases.
-- Every user-facing change adds a changeset: `pnpm changeset` (patch/minor —
-  pre-1.0, no majors). Releases are automated: merging the "Version Packages"
-  PR publishes to npm via trusted publishing.
+- Every user-facing change adds a changeset: `pnpm changeset` writes a file
+  into `.changeset/` — that file is what triggers the release automation.
+  Patch/minor only (pre-1.0, no majors). Releases are automated: merging the
+  "Version Packages" PR publishes to npm via trusted publishing.
 - Tests first for core behavior (source chain, validation, cache, CLI logic);
   React wiring has no coverage requirement.
 
