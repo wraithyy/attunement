@@ -9,13 +9,26 @@ export interface AttuneOptions<S extends StandardSchemaV1> {
   sources: Source[];
   /** Runs after validation, before load() resolves — wire up API base URL, logger, etc. */
   onLoad?: (
-    config: StandardSchemaV1.InferOutput<S>
+    config: StandardSchemaV1.InferOutput<S>,
+    fingerprint: Fingerprint
   ) => void | Promise<void>;
+}
+
+/** Identifies the loaded config — tag Sentry scope, prefix logs. */
+export interface Fingerprint {
+  /** FNV-1a over the validated config (key-order independent), 8 hex chars. */
+  hash: string;
+  /** `_version` from the raw config, when the deploy pipeline stamps one. */
+  version?: string;
+  /** `_generatedAt` from the raw config. */
+  generatedAt?: string;
 }
 
 export interface Attuned<T> {
   /** Cached — every call returns the same promise, fetch fired at attune() time. */
   load: () => Promise<T>;
+  /** Fingerprint of the loaded config; same promise timing as load(). */
+  fingerprint: () => Promise<Fingerprint>;
 }
 
 export class ConfigError extends Error {
@@ -97,6 +110,49 @@ export function deepFreeze<T>(value: T): T {
   return value;
 }
 
+// JSON.stringify with sorted object keys — same config, same hash,
+// regardless of which source/merge order produced it
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value) ?? "undefined";
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(",")}]`;
+  }
+  const entries = Object.entries(value)
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([key, child]) => `${JSON.stringify(key)}:${stableStringify(child)}`);
+  return `{${entries.join(",")}}`;
+}
+
+// ponytail: FNV-1a, 32-bit — collision-safe enough to tell configs apart in
+// logs, not a security boundary; swap for crypto.subtle if that ever changes
+function fnv1a(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function makeFingerprint(config: unknown, raw: unknown): Fingerprint {
+  const meta = (key: string): string | undefined => {
+    const value =
+      raw && typeof raw === "object"
+        ? (raw as Record<string, unknown>)[key]
+        : undefined;
+    return typeof value === "string" ? value : undefined;
+  };
+  const version = meta("_version");
+  const generatedAt = meta("_generatedAt");
+  return {
+    hash: fnv1a(stableStringify(config)),
+    ...(version !== undefined ? { version } : {}),
+    ...(generatedAt !== undefined ? { generatedAt } : {}),
+  };
+}
+
 async function resolveSources(sources: Source[]): Promise<unknown> {
   const failures: string[] = [];
 
@@ -133,14 +189,23 @@ export function attune<S extends StandardSchemaV1>(
     }
 
     const config = deepFreeze(result.value);
-    await options.onLoad?.(config);
-    return config;
+    const fingerprint = deepFreeze(makeFingerprint(config, raw));
+    await options.onLoad?.(config, fingerprint);
+    return { config, fingerprint };
   })();
 
-  // eager start must not surface as unhandledrejection when nobody awaited yet
-  promise.catch(() => {});
+  // stable promise identity — React use() re-suspends on a fresh promise
+  const configPromise = promise.then(({ config }) => config);
+  const fingerprintPromise = promise.then(({ fingerprint }) => fingerprint);
 
-  return { load: () => promise };
+  // eager start must not surface as unhandledrejection when nobody awaited yet
+  configPromise.catch(() => {});
+  fingerprintPromise.catch(() => {});
+
+  return {
+    load: () => configPromise,
+    fingerprint: () => fingerprintPromise,
+  };
 }
 
 export interface FromJsonOptions extends RequestInit {

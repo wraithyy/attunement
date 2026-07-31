@@ -119,7 +119,7 @@ src/main.tsx             → Provider
 
 | Export | Entry | Description |
 |---|---|---|
-| `attune(options)` | `attunement` | Core factory → `{ load() }`; promise starts immediately, result is cached |
+| `attune(options)` | `attunement` | Core factory → `{ load(), fingerprint() }`; promise starts immediately, result is cached |
 | `attuneReact(options)` | `attunement/react` | Core + `{ Provider, use() }` (Suspense + error boundary) |
 | `fromJson(url, options?)` | both | JSON fetch source with timeout + retry |
 | `fromWindow(key)` | both | `window` global source |
@@ -131,6 +131,20 @@ src/main.tsx             → Provider
 | `attunement(options?)` | `attunement/vite` | Vite plugin — build-time only, lives in `vite.config.ts` |
 
 Types flow from the schema — you never write generics.
+
+### Config fingerprint
+
+Which config was this session actually running? `fingerprint()` resolves to a
+stable hash of the validated config (key-order independent), plus `_version` /
+`_generatedAt` when your deploy pipeline stamps them into the raw config file
+(they don't need to be in the schema). Also passed to `onLoad` as the second
+argument:
+
+```ts
+onLoad: (config, { hash, version }) => {
+  Sentry.setTag("config", version ?? hash);
+},
+```
 
 ## Testing
 

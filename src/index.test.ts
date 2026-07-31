@@ -118,6 +118,76 @@ describe("attune", () => {
   });
 });
 
+describe("fingerprint", () => {
+  it("hashes the validated config, stable across key order", async () => {
+    const a = await attune({
+      schema,
+      sources: [() => ({ API_URL: "https://x", LOG_LEVEL: "debug" })],
+    }).fingerprint();
+    const b = await attune({
+      schema,
+      sources: [() => ({ LOG_LEVEL: "debug", API_URL: "https://x" })],
+    }).fingerprint();
+
+    expect(a.hash).toMatch(/^[0-9a-f]{8}$/);
+    expect(a.hash).toBe(b.hash);
+  });
+
+  it("differs when values differ", async () => {
+    const a = await attune({
+      schema,
+      sources: [() => ({ API_URL: "https://x" })],
+    }).fingerprint();
+    const b = await attune({
+      schema,
+      sources: [() => ({ API_URL: "https://y" })],
+    }).fingerprint();
+
+    expect(a.hash).not.toBe(b.hash);
+  });
+
+  it("picks _version and _generatedAt off the raw config", async () => {
+    const loose = z.object({ API_URL: z.string() });
+    const fingerprint = await attune({
+      schema: loose,
+      sources: [
+        () => ({
+          API_URL: "https://x",
+          _version: "1.2.3",
+          _generatedAt: "2026-07-31T10:00:00Z",
+        }),
+      ],
+    }).fingerprint();
+
+    expect(fingerprint.version).toBe("1.2.3");
+    expect(fingerprint.generatedAt).toBe("2026-07-31T10:00:00Z");
+  });
+
+  it("omits meta keys when the raw config has none", async () => {
+    const fingerprint = await attune({
+      schema,
+      sources: [() => ({ API_URL: "https://x" })],
+    }).fingerprint();
+
+    expect(fingerprint.version).toBeUndefined();
+    expect(fingerprint.generatedAt).toBeUndefined();
+  });
+
+  it("passes the fingerprint to onLoad", async () => {
+    const onLoad = vi.fn();
+    await attune({
+      schema,
+      sources: [() => ({ API_URL: "https://x", _version: "7" })],
+      onLoad,
+    }).load();
+
+    expect(onLoad).toHaveBeenCalledWith(
+      expect.objectContaining({ API_URL: "https://x" }),
+      expect.objectContaining({ hash: expect.any(String), version: "7" })
+    );
+  });
+});
+
 describe("fromWindow", () => {
   it("reads a global, nullish when absent", () => {
     const key = "__ATTUNEMENT_TEST__";
