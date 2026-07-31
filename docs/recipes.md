@@ -73,6 +73,44 @@ into `index.html`) works:
 - **Plain object storage/CDN**: upload a per-environment `app-config.json`
   next to the bundle in the deploy job.
 
+## Other frameworks
+
+The core has no framework concepts — `attune()` gives you a validated, cached
+promise; gate your bootstrap on it the way your framework prefers.
+
+**Angular** — `APP_INITIALIZER` delays bootstrap until config resolves:
+
+```ts
+// config.ts
+export const appConfig = attune({ schema, sources: [fromJson("/app-config.json")] });
+
+// app.config.ts
+export const CONFIG = new InjectionToken<Config>("app-config");
+
+providers: [
+  provideAppInitializer(() => appConfig.load()),
+  { provide: CONFIG, useFactory: () => awaitedConfigValue() },
+]
+```
+
+where `awaitedConfigValue()` returns the resolved value cached by the
+initializer (e.g. store it in a module-level variable inside `onLoad`).
+
+**Vue** — await before mount, share via `provide`/`inject`:
+
+```ts
+// main.ts
+const config = await appConfig.load();
+const app = createApp(App);
+app.provide(configKey, config);
+app.mount("#app");
+```
+
+Components `inject(configKey)` — typed, synchronous, no re-fetch. Vue's async
+`setup()` + `<Suspense>` can do the same per-component if you prefer; an
+official `/vue` adapter (reactive wrapper + injection helper) lands when
+there's demand.
+
 ## Config check in the pipeline
 
 Validate every environment's config file on each push — a broken config fails
