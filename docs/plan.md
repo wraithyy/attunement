@@ -93,7 +93,7 @@ panel (until `attunement/devtools` exists).
       (enum → select, boolean → switch), localStorage layer validated by the
       same schema, `?config.KEY=value` bootstrap — standalone widget + TanStack
       Devtools plugin
-- [ ] `attunement/vite`: dev server serves the config file + reload on change,
+- [x] `attunement/vite`: dev server serves the config file + reload on change,
       HTML placeholder inject for `fromWindow` deploys
 - [ ] Config fingerprint: hash + optional meta (`_version`, `_generatedAt`)
       exposed for Sentry scope / log prefix
