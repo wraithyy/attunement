@@ -3,6 +3,17 @@
 Patterns that don't belong in the README's critical path but come up in real
 apps.
 
+- [Outside the React tree](#outside-the-react-tree) — OAuth clients, loggers, lazy services
+- [All-strings config (env-var substitution)](#all-strings-config-env-var-substitution) — coercion recipe
+- [Serving the config file per environment](#serving-the-config-file-per-environment) — Helm, nginx `envsubst`, CDN
+- [Where to put app-config.json (per dev setup)](#where-to-put-app-configjson-per-dev-setup) — Vite, Angular, CRA, Astro
+- [Other frameworks](#other-frameworks) — Angular `APP_INITIALIZER`, Vue provide/inject
+- [Config check in the pipeline](#config-check-in-the-pipeline) — `attunement check` in CI
+- [Base + overrides (merged configs)](#base--overrides-merged-configs) — `merge`, optional override file
+- [Separate schemas](#separate-schemas) — compose vs. separate instances
+- [Dependent configs](#dependent-configs-config-bs-url-lives-in-config-a) — config B's URL from config A, [module federation caveats](#module-federation-caveats)
+- [Second config instance (kill switch)](#second-config-instance-kill-switch)
+
 ## Outside the React tree
 
 API clients, loggers, OAuth setup — anything that isn't a component reads the
