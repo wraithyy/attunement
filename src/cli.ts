@@ -71,10 +71,17 @@ export function secretFindings(raw: Record<string, unknown>): SecretFinding[] {
 // --- schema introspection (zod duck-typing, no zod import — runtime code) ---
 
 interface ZodLikeDef {
+  /** zod 3: "ZodBoolean", "ZodDefault"... */
   typeName?: string;
+  /** zod 4: "boolean", "default"... */
+  type?: string;
   innerType?: ZodLikeField;
-  defaultValue?: () => unknown;
+  /** zod 3: thunk; zod 4: plain value */
+  defaultValue?: (() => unknown) | unknown;
+  /** zod 3 enum literals */
   values?: unknown[];
+  /** zod 4 enum literals (key → value) */
+  entries?: Record<string, unknown>;
 }
 
 interface ZodLikeField {
@@ -88,21 +95,33 @@ function unwrap(field: ZodLikeField): {
 } {
   let current = field;
   let defaultValue: unknown;
-  while (current._def?.innerType) {
-    if (current._def.typeName === "ZodDefault" && current._def.defaultValue) {
-      defaultValue = current._def.defaultValue();
+  while (true) {
+    const def = current._def;
+    const inner = def?.innerType;
+    if (!inner) break;
+    if (def.typeName === "ZodDefault" || def.type === "default") {
+      defaultValue =
+        typeof def.defaultValue === "function" ? def.defaultValue() : def.defaultValue;
     }
-    current = current._def.innerType;
+    current = inner;
   }
   return { inner: current, defaultValue };
 }
 
+// zod 3 typeName and zod 4 lowercase type, same map
 const TYPE_NAMES: Record<string, FieldInfo["type"]> = {
   ZodString: "string",
   ZodNumber: "number",
   ZodBoolean: "boolean",
   ZodObject: "object",
   ZodArray: "array",
+  ZodEnum: "enum",
+  string: "string",
+  number: "number",
+  boolean: "boolean",
+  object: "object",
+  array: "array",
+  enum: "enum",
 };
 
 /** One introspected top-level schema field. */
@@ -131,14 +150,13 @@ export function introspectShape(schema: unknown): FieldInfo[] {
   return Object.entries(shape).map(([key, field]) => {
     const { inner, defaultValue } = unwrap(field);
     const def = inner._def;
-    const type =
-      def?.typeName === "ZodEnum"
-        ? "enum"
-        : (TYPE_NAMES[def?.typeName ?? ""] ?? "unknown");
+    const type = TYPE_NAMES[def?.typeName ?? def?.type ?? ""] ?? "unknown";
+    const values =
+      def?.values ?? (def?.entries ? Object.values(def.entries) : []);
     return {
       key,
       type,
-      ...(type === "enum" ? { values: def?.values ?? [] } : {}),
+      ...(type === "enum" ? { values } : {}),
       ...(defaultValue !== undefined ? { defaultValue } : {}),
       description: field.description ?? inner.description ?? "",
     };

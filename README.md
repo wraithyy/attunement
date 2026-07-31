@@ -214,7 +214,11 @@ their own config.
 ## Devtools
 
 Dev-only override panel generated from your schema — enum → select,
-boolean → checkbox. Works standalone or as a TanStack Devtools plugin:
+boolean → checkbox. For now this works with zod object schemas only (3 or
+4): Standard Schema has no introspection API yet, so the field form is
+built by reading zod's internals. Other libraries currently get a "schema
+is not introspectable" notice instead of the form; support may widen as
+the ecosystem grows. Works standalone or as a TanStack Devtools plugin:
 
 ```tsx
 // config.ts — let overrides participate in loading (dev only, merged over real config)

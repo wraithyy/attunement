@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { checkConfig, diffKeys, docsTable, secretFindings } from "./cli.js";
+import { z as z4 } from "zod/v4";
+import { checkConfig, diffKeys, docsTable, introspectShape, secretFindings } from "./cli.js";
 
 const schema = z.object({
   API_URL: z.string().describe("Backend base URL"),
@@ -77,6 +78,29 @@ describe("docsTable", () => {
     expect(table).toContain('| `LOG_LEVEL` | `"debug" \\| "info" \\| "warn"` | `"warn"` | Log verbosity |');
     expect(table).toContain("| `MAX_PHOTOS` | `number` | `30` |  |");
     expect(table).toContain("| `ENABLE_MOCKING` | `boolean` | — |  |");
+  });
+
+  // zod 4 renamed _def.typeName → _def.type (lowercase) and enum values → entries
+  it("introspects a zod 4 schema (boolean, enum, defaults)", () => {
+    const shape = introspectShape(
+      z4.object({
+        API_URL: z4.string().describe("Backend base URL"),
+        ENABLE_MOCKING: z4.boolean().default(false),
+        LOG_LEVEL: z4.enum(["debug", "info", "warn"]).default("warn"),
+      })
+    );
+
+    expect(shape).toEqual([
+      { key: "API_URL", type: "string", description: "Backend base URL" },
+      { key: "ENABLE_MOCKING", type: "boolean", defaultValue: false, description: "" },
+      {
+        key: "LOG_LEVEL",
+        type: "enum",
+        values: ["debug", "info", "warn"],
+        defaultValue: "warn",
+        description: "",
+      },
+    ]);
   });
 
   it("throws a helpful error for non-introspectable schemas", () => {
