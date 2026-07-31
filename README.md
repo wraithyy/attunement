@@ -35,13 +35,13 @@ library is for.
 
 ### vs. the alternatives
 
-| | Runtime (no rebuild) | Schema validation | Typed config | Blocks render until ready | Runtime cost |
-|---|:---:|:---:|:---:|:---:|:---:|
-| **attunement** | ✅ | ✅ any Standard Schema, in the running app | ✅ inferred from schema | ✅ Suspense gate | ~1 kB, zero deps |
-| `import.meta.env` / [import-meta-env](https://github.com/runtime-env/import-meta-env) | ❌ build-time | ⚠️ primitive type check at inject time, nothing at runtime | ✅ generated `.d.ts` | — | none (build-time) |
-| hand-rolled `window._env_` + `envsubst` | ✅ | ❌ unless you write it | ❌ hand-written | ❌ DIY — a stale or 404'd `env.js` fails silently | none |
-| `runtime-env-cra`, `react-inject-env` (dormant since ~2021) | ✅ | ❌ | ❌ | ❌ | tiny |
-| ConfigCat / Unleash / LaunchDarkly | ✅ | flag-level only | ⚠️ per-flag getters | SDK-specific opt-in (e.g. `asyncWithLDProvider`) | full SDK (tens of kB) + network |
+| | Runtime (no rebuild) | Schema validation | Typed config | Blocks render until ready | Tooling | Runtime cost |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| **attunement** | ✅ | ✅ any Standard Schema, in the running app | ✅ inferred from schema | ✅ Suspense gate | dev override panel, CI check CLI, Vite plugin | ~1 kB, zero deps |
+| `import.meta.env` / [import-meta-env](https://github.com/runtime-env/import-meta-env) | ❌ build-time | ⚠️ primitive type check at inject time, nothing at runtime | ✅ generated `.d.ts` | — | editor types | none (build-time) |
+| hand-rolled `window._env_` + `envsubst` | ✅ | ❌ unless you write it | ❌ hand-written | ❌ DIY — a stale or 404'd `env.js` fails silently | ❌ | none |
+| `runtime-env-cra`, `react-inject-env` (dormant since ~2021) | ✅ | ❌ | ❌ | ❌ | ❌ | tiny |
+| ConfigCat / Unleash / LaunchDarkly | ✅ | flag-level only | ⚠️ per-flag getters | SDK-specific opt-in (e.g. `asyncWithLDProvider`) | ✅ hosted dashboard, targeting UI | full SDK (tens of kB) + network |
 
 Feature-flag services solve a different problem (targeting, rollout,
 experimentation) — a `Source` can wrap their SDK if you use both.
