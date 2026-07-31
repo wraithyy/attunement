@@ -1,4 +1,10 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useEffect,
+  useState,
+  type CSSProperties,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { introspectShape, type FieldInfo } from "./cli.js";
 import type { Source } from "./index.js";
 import type { AttunedReact } from "./react.js";
@@ -277,7 +283,7 @@ export function AttunementDevtools<T extends Record<string, unknown>>(
 export function attunementDevtoolsPlugin<T extends Record<string, unknown>>(
   config: AttunedReact<T>,
   storageKey?: string
-): { name: string; render: ReactNode } {
+): { name: string; render: ReactElement } {
   return {
     name: "Attunement",
     render: <AttunementDevtoolsPanel config={config} storageKey={storageKey} />,
