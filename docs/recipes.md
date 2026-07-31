@@ -73,6 +73,22 @@ into `index.html`) works:
 - **Plain object storage/CDN**: upload a per-environment `app-config.json`
   next to the bundle in the deploy job.
 
+## Where to put app-config.json (per dev setup)
+
+The file must be served by the dev server at the URL `fromJson` fetches
+(`/app-config.json` in all examples). Static-assets directory per setup:
+
+| Setup | Put the file in | Served at |
+|---|---|---|
+| Vite (React, Vue, vanilla…) | `public/app-config.json` | `/app-config.json` |
+| Vite + `attunement/vite` plugin | anywhere (default `config/app-config.json`) | `/app-config.json` + reload on change |
+| Angular CLI | `public/app-config.json` (older projects: `src/assets/` + entry in `angular.json#assets`) | `/app-config.json` |
+| Create React App | `public/app-config.json` | `/app-config.json` |
+| Astro | `public/app-config.json` | `/app-config.json` |
+
+In production it's the same idea: the deploy drops the environment's file next
+to `index.html` (see [serving per environment](#serving-the-config-file-per-environment)).
+
 ## Other frameworks
 
 The core has no framework concepts — `attune()` gives you a validated, cached
