@@ -37,11 +37,11 @@ library is for.
 
 | | Runtime (no rebuild) | Schema validation | Blocks render until ready |
 |---|:---:|:---:|:---:|
-| **attunement** | ✅ | ✅ any Standard Schema | ✅ Suspense gate |
-| `import.meta.env` / [import-meta-env](https://github.com/runtime-env/import-meta-env) | ❌ build-time | ❌ (generated types only) | — |
-| hand-rolled `window._env_` + `envsubst` | ✅ | ❌ unless you write it | ❌ script-order luck |
-| `runtime-env-cra`, `react-inject-env` | ✅ | ❌ | ❌ (both unmaintained for years) |
-| ConfigCat / Unleash / LaunchDarkly | ✅ | flag-level only | SDK-specific |
+| **attunement** | ✅ | ✅ any Standard Schema, in the running app | ✅ Suspense gate |
+| `import.meta.env` / [import-meta-env](https://github.com/runtime-env/import-meta-env) | ❌ build-time | ⚠️ primitive type check at inject time, nothing at runtime | — |
+| hand-rolled `window._env_` + `envsubst` | ✅ | ❌ unless you write it | ❌ DIY — a stale or 404'd `env.js` fails silently |
+| `runtime-env-cra`, `react-inject-env` (dormant since ~2021) | ✅ | ❌ | ❌ |
+| ConfigCat / Unleash / LaunchDarkly | ✅ | flag-level only | SDK-specific opt-in (e.g. `asyncWithLDProvider`) |
 
 Feature-flag services solve a different problem (targeting, rollout,
 experimentation) — a `Source` can wrap their SDK if you use both.
@@ -217,17 +217,24 @@ Dev-only override panel generated from your schema — enum → select,
 boolean → checkbox. Works standalone or as a TanStack Devtools plugin:
 
 ```tsx
-import { AttunementDevtools, attunementDevtoolsPlugin, fromOverrides } from "attunement/devtools";
+// config.ts — let overrides participate in loading (dev only, merged over real config)
+import { fromOverrides } from "attunement/devtools";
 
-// 1. let overrides participate in loading — dev only, merged over real config
-sources: import.meta.env.DEV
-  ? [merge(fromJson("/app-config.json"), fromOverrides())]
-  : [fromJson("/app-config.json")],
+const devOverrides = import.meta.env.DEV ? [fromOverrides()] : [];
 
-// 2a. standalone floating widget
+export const appConfig = attuneReact({
+  schema,
+  sources: [merge(fromJson("/app-config.json"), ...devOverrides)],
+});
+```
+
+```tsx
+// App.tsx — standalone floating widget…
+import { AttunementDevtools, attunementDevtoolsPlugin } from "attunement/devtools";
+
 {import.meta.env.DEV && <AttunementDevtools config={appConfig} />}
 
-// 2b. or as a TanStack Devtools plugin
+// …or as a TanStack Devtools plugin instead
 <TanStackDevtools plugins={[attunementDevtoolsPlugin(appConfig)]} />
 ```
 
