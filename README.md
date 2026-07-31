@@ -164,8 +164,30 @@ A custom source is a one-liner (`() => unknown | Promise<unknown>`), and each
 | `createTestProvider(config, overrides)` | `attunement/testing` | Synchronous Provider for tests |
 | `attunement` CLI (`check`, `docs`) | bin / `attunement/cli` | Validate config files in CI, generate schema docs |
 | `AttunementDevtools` / `attunementDevtoolsPlugin` / `fromOverrides` | `attunement/devtools` | Dev override panel — standalone or TanStack Devtools plugin |
+| `attunement(options?)` | `attunement/vite` | Vite plugin: serve config in dev + reload on change, HTML inject |
 
 Types flow from the schema — you never write generics.
+
+## Vite plugin
+
+```ts
+// vite.config.ts
+import { attunement } from "attunement/vite";
+
+export default defineConfig({
+  plugins: [attunement({ configFile: "config/app-config.json" })],
+});
+```
+
+- Dev server serves the file at `/app-config.json` and **full-reloads on
+  change** — edit config, see the app re-attune
+- `injectKey: "__APP_CONFIG__"` additionally injects the config into
+  `index.html` for `fromWindow`: real content in dev, a
+  `"__ATTUNEMENT_CONFIG__"` placeholder in builds for your deploy pipeline to
+  replace
+
+Without the plugin, Vite's `public/` directory works too — you just don't get
+reload-on-change or the HTML inject.
 
 ## Devtools
 
@@ -219,8 +241,8 @@ environment (Helm, nginx `envsubst`, CDN), second instance as a kill switch.
 
 ## Contributing
 
-Issues and PRs welcome — run `pnpm test && pnpm typecheck && pnpm build`
-before pushing. Releases via changesets; changelog on
+Issues and PRs welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md). Releases
+via changesets; changelog on
 [GitHub Releases](https://github.com/wraithyy/attunement/releases).
 
 ## License
