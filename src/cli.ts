@@ -97,7 +97,7 @@ function unwrap(field: ZodLikeField): {
   return { inner: current, defaultValue };
 }
 
-const TYPE_NAMES: Record<string, string> = {
+const TYPE_NAMES: Record<string, FieldInfo["type"]> = {
   ZodString: "string",
   ZodNumber: "number",
   ZodBoolean: "boolean",
@@ -105,33 +105,61 @@ const TYPE_NAMES: Record<string, string> = {
   ZodArray: "array",
 };
 
-function typeLabel(field: ZodLikeField): string {
-  const def = field._def;
-  if (def?.typeName === "ZodEnum" && def.values) {
-    return def.values.map((v) => JSON.stringify(v)).join(" \\| ");
+/** One introspected top-level schema field. */
+export interface FieldInfo {
+  key: string;
+  type: "string" | "number" | "boolean" | "enum" | "object" | "array" | "unknown";
+  /** Enum literals, present when type === "enum". */
+  values?: unknown[];
+  defaultValue?: unknown;
+  description: string;
+}
+
+/**
+ * @internal Introspect a zod object schema's top-level fields (duck-typed,
+ * no zod import — other Standard Schema libraries don't expose structure).
+ * Shared by `docsTable` and the devtools panel form.
+ */
+export function introspectShape(schema: unknown): FieldInfo[] {
+  const shape = (schema as { shape?: Record<string, ZodLikeField> }).shape;
+  if (!shape || typeof shape !== "object") {
+    throw new Error(
+      "attunement: cannot introspect this schema — a zod object schema (with .shape) is required"
+    );
   }
-  return TYPE_NAMES[def?.typeName ?? ""] ?? "unknown";
+
+  return Object.entries(shape).map(([key, field]) => {
+    const { inner, defaultValue } = unwrap(field);
+    const def = inner._def;
+    const type =
+      def?.typeName === "ZodEnum"
+        ? "enum"
+        : (TYPE_NAMES[def?.typeName ?? ""] ?? "unknown");
+    return {
+      key,
+      type,
+      ...(type === "enum" ? { values: def?.values ?? [] } : {}),
+      ...(defaultValue !== undefined ? { defaultValue } : {}),
+      description: field.description ?? inner.description ?? "",
+    };
+  });
 }
 
 /**
  * Markdown table of keys, types, defaults and `.describe()` descriptions.
- * Introspection is zod-shaped (duck-typed `.shape`/`._def`) — other Standard
- * Schema libraries don't expose structure to introspect.
+ * Requires a zod object schema — see `introspectShape`.
  */
 export function docsTable(schema: unknown): string {
-  const shape = (schema as { shape?: Record<string, ZodLikeField> }).shape;
-  if (!shape || typeof shape !== "object") {
-    throw new Error(
-      "attunement docs: cannot introspect this schema — a zod object schema (with .shape) is required"
-    );
-  }
-
-  const rows = Object.entries(shape).map(([key, field]) => {
-    const { inner, defaultValue } = unwrap(field);
-    const description = field.description ?? inner.description ?? "";
+  const rows = introspectShape(schema).map((field) => {
+    const type =
+      field.type === "enum"
+        ? (field.values ?? []).map((v) => JSON.stringify(v)).join(" \\| ")
+        : field.type;
     const def =
-      defaultValue === undefined ? "—" : `\`${JSON.stringify(defaultValue)}\``;
-    return `| \`${key}\` | \`${typeLabel(inner)}\` | ${def} | ${description} |`;
+      field.defaultValue === undefined
+        ? "—"
+        : `\`${JSON.stringify(field.defaultValue)}\``;
+    return `| \`${field.key}\` | \`${type}\` | ${def} | ${field.description} |`;
   });
 
   return [

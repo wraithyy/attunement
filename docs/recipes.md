@@ -3,6 +3,17 @@
 Patterns that don't belong in the README's critical path but come up in real
 apps.
 
+- [Outside the React tree](#outside-the-react-tree) — OAuth clients, loggers, lazy services
+- [All-strings config (env-var substitution)](#all-strings-config-env-var-substitution) — coercion recipe
+- [Serving the config file per environment](#serving-the-config-file-per-environment) — Helm, nginx `envsubst`, CDN
+- [Where to put app-config.json (per dev setup)](#where-to-put-app-configjson-per-dev-setup) — Vite, Angular, CRA, Astro
+- [Other frameworks](#other-frameworks) — Angular `APP_INITIALIZER`, Vue provide/inject
+- [Config check in the pipeline](#config-check-in-the-pipeline) — `attunement check` in CI
+- [Base + overrides (merged configs)](#base--overrides-merged-configs) — `merge`, optional override file
+- [Separate schemas](#separate-schemas) — compose vs. separate instances
+- [Dependent configs](#dependent-configs-config-bs-url-lives-in-config-a) — config B's URL from config A, [module federation caveats](#module-federation-caveats)
+- [Second config instance (kill switch)](#second-config-instance-kill-switch)
+
 ## Outside the React tree
 
 API clients, loggers, OAuth setup — anything that isn't a component reads the
@@ -72,6 +83,60 @@ into `index.html`) works:
   Values arrive as strings — see the coercion recipe above.
 - **Plain object storage/CDN**: upload a per-environment `app-config.json`
   next to the bundle in the deploy job.
+
+## Where to put app-config.json (per dev setup)
+
+The file must be served by the dev server at the URL `fromJson` fetches
+(`/app-config.json` in all examples). Static-assets directory per setup:
+
+| Setup | Put the file in | Served at |
+|---|---|---|
+| Vite (React, Vue, vanilla…) | `public/app-config.json` | `/app-config.json` |
+| Vite + `attunement/vite` plugin | anywhere (default `config/app-config.json`) | `/app-config.json` + reload on change |
+| Angular CLI | `public/app-config.json` (older projects: `src/assets/` + entry in `angular.json#assets`) | `/app-config.json` |
+| Create React App | `public/app-config.json` | `/app-config.json` |
+| Astro | `public/app-config.json` | `/app-config.json` |
+
+In production it's the same idea: the deploy drops the environment's file next
+to `index.html` (see [serving per environment](#serving-the-config-file-per-environment)).
+
+## Other frameworks
+
+The core has no framework concepts — `attune()` gives you a validated, cached
+promise; gate your bootstrap on it the way your framework prefers.
+
+**Angular** — `APP_INITIALIZER` delays bootstrap until config resolves:
+
+```ts
+// config.ts
+export const appConfig = attune({ schema, sources: [fromJson("/app-config.json")] });
+
+// app.config.ts
+export const CONFIG = new InjectionToken<Config>("app-config");
+
+providers: [
+  provideAppInitializer(() => appConfig.load()),
+  { provide: CONFIG, useFactory: () => awaitedConfigValue() },
+]
+```
+
+where `awaitedConfigValue()` returns the resolved value cached by the
+initializer (e.g. store it in a module-level variable inside `onLoad`).
+
+**Vue** — await before mount, share via `provide`/`inject`:
+
+```ts
+// main.ts
+const config = await appConfig.load();
+const app = createApp(App);
+app.provide(configKey, config);
+app.mount("#app");
+```
+
+Components `inject(configKey)` — typed, synchronous, no re-fetch. Vue's async
+`setup()` + `<Suspense>` can do the same per-component if you prefer; an
+official `/vue` adapter (reactive wrapper + injection helper) lands when
+there's demand.
 
 ## Config check in the pipeline
 
