@@ -355,13 +355,17 @@ export const appConfig = attuneReact({
 ```
 
 ```tsx
-// App.tsx — lazy import: `import.meta.env.DEV &&` removes the call, NOT the
-// import — a static import ships the whole panel in your production bundle
+// App.tsx — the whole lazy() belongs INSIDE the DEV gate. A DEV gate around
+// the render alone removes the call, not the import; and an ungated
+// lazy(() => import(...)) still emits (and deploys) the devtools chunk —
+// the gate must make the dynamic import itself unreachable in builds.
 import { lazy } from "react";
 
-const AttunementDevtools = lazy(() =>
-  import("attunement/devtools").then((m) => ({ default: m.AttunementDevtools }))
-);
+const AttunementDevtools = import.meta.env.DEV
+  ? lazy(() =>
+      import("attunement/devtools").then((m) => ({ default: m.AttunementDevtools }))
+    )
+  : () => null;
 
 {import.meta.env.DEV && <AttunementDevtools config={appConfig} />}
 ```

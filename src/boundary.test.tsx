@@ -92,6 +92,41 @@ describe("ConfigBoundary", () => {
     expect(typeof gotRetry).toBe("function");
   });
 
+  it("offers 'Clear overrides and reload' when dev overrides are active", async () => {
+    localStorage.setItem("attunement:overrides", JSON.stringify({ MAX: "abc" }));
+    const config = makeConfig([() => Promise.reject(new Error("outage"))]);
+    const reload = vi.fn();
+    vi.stubGlobal("location", { reload });
+
+    const el = await render(
+      <config.Provider>
+        <span>never</span>
+      </config.Provider>
+    );
+
+    expect(el.textContent).toContain("Dev overrides are active");
+    expect(el.textContent).toContain('MAX = "abc"');
+    const clear = Array.from(el.querySelectorAll("button")).find((b) =>
+      b.textContent?.startsWith("Clear overrides")
+    );
+    await act(async () => clear?.click());
+    expect(localStorage.getItem("attunement:overrides")).toBeNull();
+    expect(reload).toHaveBeenCalled();
+
+    vi.unstubAllGlobals();
+    localStorage.removeItem("attunement:overrides");
+  });
+
+  it("shows no overrides block when none are stored", async () => {
+    const config = makeConfig([() => Promise.reject(new Error("outage"))]);
+    const el = await render(
+      <config.Provider>
+        <span>never</span>
+      </config.Provider>
+    );
+    expect(el.textContent).not.toContain("Dev overrides");
+  });
+
   it("rethrows app bugs to the outer boundary instead of masking them", async () => {
     const config = makeConfig([() => ({ API_URL: "https://x" })]);
     const outerSaw = vi.fn();

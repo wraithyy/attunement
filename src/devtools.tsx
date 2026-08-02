@@ -6,8 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import { introspectShape, type FieldInfo } from "./cli.js";
-import type { Source } from "./index.js";
-import type { AttunedReact } from "./react.js";
+import type { Attuned, Source } from "./index.js";
 
 const DEFAULT_KEY = "attunement:overrides";
 
@@ -85,7 +84,12 @@ export function fromOverrides(storageKey = DEFAULT_KEY): Source {
 // --- panel ---
 
 export interface DevtoolsProps<T extends Record<string, unknown> = Record<string, unknown>> {
-  config: AttunedReact<T>;
+  /**
+   * Core or React handle — the panel only needs load() and the schema, both
+   * on Attuned. Taking the core type keeps AttunedReact (invariant in T via
+   * its context) assignable and lets bindReact users pass the core handle.
+   */
+  config: Attuned<T>;
   /** Must match the key given to fromOverrides. */
   storageKey?: string;
   /**
@@ -315,7 +319,7 @@ export function AttunementDevtools<T extends Record<string, unknown>>({
  *   <TanStackDevtools plugins={[attunementDevtoolsPlugin(appConfig)]} />
  */
 export function attunementDevtoolsPlugin<T extends Record<string, unknown>>(
-  config: AttunedReact<T>,
+  config: Attuned<T>,
   options: Pick<DevtoolsProps<T>, "storageKey" | "fields"> = {}
 ): { name: string; render: ReactElement } {
   return {
