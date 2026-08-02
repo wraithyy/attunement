@@ -33,8 +33,8 @@ studies.
   the user side), not at render time. Keep the `.catch(() => {})` guard against
   unhandledrejection.
 - **Small core.** New functionality goes into new entry points (`/cli`, `/vite`,
-  `/devtools`); core stays ~100 lines. Before adding to core, ask: can this be
-  a Source or an adapter instead?
+  `/devtools`); core stays a single small file (~350 lines), zero deps. Before
+  adding to core, ask: can this be a Source or an adapter instead?
 
 ## Structure
 

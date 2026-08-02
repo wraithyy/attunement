@@ -4,17 +4,21 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { checkConfig, diffKeys, docsTable, secretFindings } from "./cli.js";
+import { makeFingerprint } from "./index.js";
 
 const USAGE = `attunement — validate runtime config files against your schema
 
 Usage:
-  attunement check --schema <module> [--diff] <files...>
+  attunement check --schema <module> [--diff] [--strict] [--print-fingerprint] <files...>
   attunement docs  --schema <module>
 
 Options:
-  --schema  Path to a module exporting the schema (named export "schema" or default).
-            .ts works directly on Node >= 22.18 (native type stripping).
-  --diff    Also fail when the files disagree on top-level keys (prod/stage drift).
+  --schema             Path to a module exporting the schema (named export "schema" or default).
+                       .ts works directly on Node >= 22.18 (native type stripping).
+  --diff               Also fail when the files disagree on top-level keys (prod/stage drift).
+  --strict             Secret hygiene warnings become failures.
+  --print-fingerprint  Print "<file> <hash> [version]" per valid file — the same
+                       hash the running app reports via fingerprint().
 
 Exit codes: 0 ok, 1 validation/diff failure, 2 usage error.`;
 
@@ -58,6 +62,8 @@ async function main(): Promise<number> {
     options: {
       schema: { type: "string" },
       diff: { type: "boolean", default: false },
+      strict: { type: "boolean", default: false },
+      "print-fingerprint": { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
     allowPositionals: true,
@@ -102,16 +108,22 @@ async function main(): Promise<number> {
     const result = await checkConfig(schema, raw);
     if (result.ok) {
       console.log(`ok   ${file}`);
+      if (values["print-fingerprint"]) {
+        const { hash, version } = makeFingerprint(result.value, raw);
+        console.log(`fingerprint ${file} ${hash}${version ? ` ${version}` : ""}`);
+      }
     } else {
       failed = true;
       console.error(`FAIL ${file}\n${result.message}`);
     }
 
     for (const finding of secretFindings(raw)) {
+      const level = values.strict ? "FAIL" : "warn";
+      if (values.strict) failed = true;
       console.warn(
         finding.reason === "name"
-          ? `warn ${file}: "${finding.key}" looks like a credential by name — SPA config is public`
-          : `warn ${file}: "${finding.key}" value looks like a generated secret (high entropy) — SPA config is public`
+          ? `${level} ${file}: "${finding.key}" looks like a credential by name — SPA config is public`
+          : `${level} ${file}: "${finding.key}" value looks like a generated secret (high entropy) — SPA config is public`
       );
     }
   }

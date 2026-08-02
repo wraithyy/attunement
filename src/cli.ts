@@ -5,6 +5,8 @@ import { formatIssues } from "./index.js";
 export interface CheckResult {
   ok: boolean;
   message?: string;
+  /** Validated output (defaults applied) — present when ok. */
+  value?: unknown;
 }
 
 export async function checkConfig(
@@ -15,7 +17,7 @@ export async function checkConfig(
   if (result.issues) {
     return { ok: false, message: formatIssues(result.issues, raw) };
   }
-  return { ok: true };
+  return { ok: true, value: result.value };
 }
 
 /** Keys present in some files but missing in others — the classic prod/stage drift. */
@@ -170,10 +172,11 @@ export function introspectShape(schema: unknown): FieldInfo[] {
 
 /**
  * Markdown table of keys, types, defaults and `.describe()` descriptions.
- * Requires a zod object schema — see `introspectShape`.
+ * Requires a zod object schema — see `introspectShape` — or pass `fields`
+ * explicitly (the escape hatch for Valibot/ArkType and future zod shapes).
  */
-export function docsTable(schema: unknown): string {
-  const rows = introspectShape(schema).map((field) => {
+export function docsTable(schema: unknown, fields?: FieldInfo[]): string {
+  const rows = (fields ?? introspectShape(schema)).map((field) => {
     const type =
       field.type === "enum"
         ? (field.values ?? []).map((v) => JSON.stringify(v)).join(" \\| ")

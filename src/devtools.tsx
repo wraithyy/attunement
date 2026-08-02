@@ -11,7 +11,7 @@ import type { AttunedReact } from "./react.js";
 
 const DEFAULT_KEY = "attunement:overrides";
 
-/** Read stored dev overrides (empty object when none/invalid). */
+/** @internal panel wiring — read stored dev overrides (empty object when none/invalid). */
 export function readOverrides(storageKey = DEFAULT_KEY): Record<string, unknown> {
   try {
     const raw: unknown = JSON.parse(localStorage.getItem(storageKey) ?? "{}");
@@ -23,6 +23,7 @@ export function readOverrides(storageKey = DEFAULT_KEY): Record<string, unknown>
   }
 }
 
+/** @internal panel wiring */
 export function writeOverrides(
   overrides: Record<string, unknown>,
   storageKey = DEFAULT_KEY
@@ -34,6 +35,7 @@ export function writeOverrides(
   }
 }
 
+/** @internal panel wiring */
 export function clearOverrides(storageKey = DEFAULT_KEY): void {
   try {
     localStorage.removeItem(storageKey);
@@ -86,6 +88,12 @@ export interface DevtoolsProps<T extends Record<string, unknown> = Record<string
   config: AttunedReact<T>;
   /** Must match the key given to fromOverrides. */
   storageKey?: string;
+  /**
+   * Explicit field list — bypasses schema introspection. The escape hatch
+   * for non-zod Standard Schema libraries (Valibot, ArkType) or a zod
+   * version the duck-typing doesn't know yet.
+   */
+  fields?: FieldInfo[];
 }
 
 const styles = {
@@ -168,6 +176,7 @@ function FieldInput({
 export function AttunementDevtoolsPanel<T extends Record<string, unknown>>({
   config,
   storageKey = DEFAULT_KEY,
+  fields: explicitFields,
 }: DevtoolsProps<T>) {
   const [loaded, setLoaded] = useState<Record<string, unknown> | null>(null);
   const [overrides, setOverrides] = useState<Record<string, unknown>>(() =>
@@ -180,7 +189,7 @@ export function AttunementDevtoolsPanel<T extends Record<string, unknown>>({
 
   let fields: FieldInfo[];
   try {
-    fields = introspectShape(config._schema);
+    fields = explicitFields ?? introspectShape(config._schema);
   } catch {
     return (
       <div style={styles.panel}>
@@ -307,10 +316,10 @@ export function AttunementDevtools<T extends Record<string, unknown>>({
  */
 export function attunementDevtoolsPlugin<T extends Record<string, unknown>>(
   config: AttunedReact<T>,
-  storageKey?: string
+  options: Pick<DevtoolsProps<T>, "storageKey" | "fields"> = {}
 ): { name: string; render: ReactElement } {
   return {
     name: "Attunement",
-    render: <AttunementDevtoolsPanel config={config} storageKey={storageKey} />,
+    render: <AttunementDevtoolsPanel config={config} {...options} />,
   };
 }
