@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { attune, ConfigError, fromJson, fromWindow, merge } from "./index.js";
+import { attune, ConfigError, fromJson, fromWindow, merge, optional } from "./index.js";
 
 const schema = z.object({
   API_URL: z.string(),
@@ -118,6 +118,184 @@ describe("attune", () => {
   });
 });
 
+describe("onReady", () => {
+  const source = () => ({ API_URL: "https://x" });
+
+  it("runs onLoad first, then onReady callbacks in registration order, before load() resolves", async () => {
+    const order: string[] = [];
+    const handle = attune({
+      schema,
+      sources: [source],
+      onLoad: () => {
+        order.push("onLoad");
+      },
+    });
+    handle.onReady(() => {
+      order.push("ready-1");
+    });
+    handle.onReady(() => {
+      order.push("ready-2");
+    });
+
+    await handle.load();
+    expect(order).toEqual(["onLoad", "ready-1", "ready-2"]);
+  });
+
+  it("receives config and fingerprint", async () => {
+    const handle = attune({ schema, sources: [source] });
+    const cb = vi.fn();
+    handle.onReady(cb);
+
+    await handle.load();
+    expect(cb).toHaveBeenCalledWith(
+      expect.objectContaining({ API_URL: "https://x" }),
+      expect.objectContaining({ hash: expect.any(String) })
+    );
+  });
+
+  it("a callback error rejects the load as ConfigError", async () => {
+    const handle = attune({ schema, sources: [source] });
+    handle.onReady(() => {
+      throw new Error("router exploded");
+    });
+
+    await expect(handle.load()).rejects.toBeInstanceOf(ConfigError);
+    await expect(handle.load()).rejects.toThrow(/router exploded/);
+  });
+
+  it("drains callbacks registered while another callback awaits", async () => {
+    const order: string[] = [];
+    const handle = attune({ schema, sources: [source] });
+    handle.onReady(async () => {
+      order.push("outer");
+      await Promise.resolve();
+      handle.onReady(() => {
+        order.push("nested");
+      });
+    });
+
+    await handle.load();
+    expect(order).toEqual(["outer", "nested"]);
+  });
+
+  it("late registration runs immediately and warns in DEV", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const handle = attune({ schema, sources: [source] });
+    await handle.load();
+
+    const cb = vi.fn();
+    handle.onReady(cb);
+    await Promise.resolve(); // late callbacks run in a microtask
+
+    expect(cb).toHaveBeenCalledWith(
+      expect.objectContaining({ API_URL: "https://x" }),
+      expect.anything()
+    );
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("onReady"));
+    warn.mockRestore();
+  });
+
+  it("late registration on a rejected load is a no-op", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const handle = attune({ schema, sources: [() => null] });
+    await handle.load().catch(() => {});
+
+    const cb = vi.fn();
+    handle.onReady(cb);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(cb).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
+describe("optional", () => {
+  it("turns a throwing source into undefined so merge falls through", async () => {
+    const merged = merge(
+      () => ({ API_URL: "https://base" }),
+      optional(() => {
+        throw new Error("404");
+      })
+    );
+
+    await expect(merged()).resolves.toEqual({ API_URL: "https://base" });
+  });
+
+  it("passes successful values through", async () => {
+    await expect(optional(() => ({ K: 1 }))()).resolves.toEqual({ K: 1 });
+  });
+});
+
+describe("fingerprint", () => {
+  it("hashes the validated config, stable across key order", async () => {
+    const a = await attune({
+      schema,
+      sources: [() => ({ API_URL: "https://x", LOG_LEVEL: "debug" })],
+    }).fingerprint();
+    const b = await attune({
+      schema,
+      sources: [() => ({ LOG_LEVEL: "debug", API_URL: "https://x" })],
+    }).fingerprint();
+
+    expect(a.hash).toMatch(/^[0-9a-f]{8}$/);
+    expect(a.hash).toBe(b.hash);
+  });
+
+  it("differs when values differ", async () => {
+    const a = await attune({
+      schema,
+      sources: [() => ({ API_URL: "https://x" })],
+    }).fingerprint();
+    const b = await attune({
+      schema,
+      sources: [() => ({ API_URL: "https://y" })],
+    }).fingerprint();
+
+    expect(a.hash).not.toBe(b.hash);
+  });
+
+  it("picks _version and _generatedAt off the raw config", async () => {
+    const loose = z.object({ API_URL: z.string() });
+    const fingerprint = await attune({
+      schema: loose,
+      sources: [
+        () => ({
+          API_URL: "https://x",
+          _version: "1.2.3",
+          _generatedAt: "2026-07-31T10:00:00Z",
+        }),
+      ],
+    }).fingerprint();
+
+    expect(fingerprint.version).toBe("1.2.3");
+    expect(fingerprint.generatedAt).toBe("2026-07-31T10:00:00Z");
+  });
+
+  it("omits meta keys when the raw config has none", async () => {
+    const fingerprint = await attune({
+      schema,
+      sources: [() => ({ API_URL: "https://x" })],
+    }).fingerprint();
+
+    expect(fingerprint.version).toBeUndefined();
+    expect(fingerprint.generatedAt).toBeUndefined();
+  });
+
+  it("passes the fingerprint to onLoad", async () => {
+    const onLoad = vi.fn();
+    await attune({
+      schema,
+      sources: [() => ({ API_URL: "https://x", _version: "7" })],
+      onLoad,
+    }).load();
+
+    expect(onLoad).toHaveBeenCalledWith(
+      expect.objectContaining({ API_URL: "https://x" }),
+      expect.objectContaining({ hash: expect.any(String), version: "7" })
+    );
+  });
+});
+
 describe("fromWindow", () => {
   it("reads a global, nullish when absent", () => {
     const key = "__ATTUNEMENT_TEST__";
@@ -211,6 +389,24 @@ describe("fromJson", () => {
     );
 
     expect(await fromJson("/app-config.json")()).toEqual({ API_URL: "x" });
+    vi.unstubAllGlobals();
+  });
+
+  it("defaults cache: no-store, overridable via init", async () => {
+    const fetchMock = vi.fn(async () => new Response("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fromJson("/c.json")();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/c.json",
+      expect.objectContaining({ cache: "no-store" })
+    );
+
+    await fromJson("/c.json", { cache: "default" })();
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/c.json",
+      expect.objectContaining({ cache: "default" })
+    );
     vi.unstubAllGlobals();
   });
 

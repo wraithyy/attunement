@@ -1,7 +1,22 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
-/** A config source. Return raw config, or null/undefined to let the next source try. */
-export type Source = () => unknown | Promise<unknown>;
+/**
+ * A config source: sync or async, returns raw config, or null/undefined to
+ * let the next source try. (`unknown` already covers promises — attune
+ * awaits every result.)
+ */
+export type Source = () => unknown;
+
+/**
+ * @internal DEV detection shared across entries. Two paths: bundlers doing
+ * define-replacement need the dotted process.env.NODE_ENV literal (no
+ * optional chain — it breaks the match); Vite browser ESM has no `process`
+ * and needs import.meta.env.DEV. The cast: import.meta typing depends on
+ * the consumer's bundler types.
+ */
+export const DEV =
+  (typeof process !== "undefined" && process.env.NODE_ENV !== "production") ||
+  (import.meta as { env?: { DEV?: boolean } }).env?.DEV === true;
 
 export interface AttuneOptions<S extends StandardSchemaV1> {
   schema: S;
@@ -9,13 +24,40 @@ export interface AttuneOptions<S extends StandardSchemaV1> {
   sources: Source[];
   /** Runs after validation, before load() resolves — wire up API base URL, logger, etc. */
   onLoad?: (
-    config: StandardSchemaV1.InferOutput<S>
+    config: StandardSchemaV1.InferOutput<S>,
+    fingerprint: Fingerprint
   ) => void | Promise<void>;
 }
 
-export interface Attuned<T> {
+/** Identifies the loaded config — tag Sentry scope, prefix logs. */
+export interface Fingerprint {
+  /** FNV-1a over the validated config (key-order independent), 8 hex chars. */
+  hash: string;
+  /** `_version` from the raw config, when the deploy pipeline stamps one. */
+  version?: string;
+  /** `_generatedAt` from the raw config. */
+  generatedAt?: string;
+}
+
+export interface Attuned<T, S extends StandardSchemaV1 = StandardSchemaV1> {
   /** Cached — every call returns the same promise, fetch fired at attune() time. */
   load: () => Promise<T>;
+  /** Fingerprint of the loaded config; same promise timing as load(). */
+  fingerprint: () => Promise<Fingerprint>;
+  /**
+   * Register wiring that must finish before load() resolves (and so before
+   * first render under the React Provider). Same queue and guarantees as
+   * options.onLoad — use onReady from modules the config module must not
+   * import (router, i18n) to avoid import cycles. Callback errors reject the
+   * load. Registered after the config already resolved: runs immediately
+   * (DEV warns — the before-render guarantee no longer applies); after a
+   * failed load: never runs.
+   */
+  onReady: (
+    cb: (config: T, fingerprint: Fingerprint) => void | Promise<void>
+  ) => void;
+  /** @internal wiring for attunement/react, /devtools and /testing */
+  _schema: S;
 }
 
 export class ConfigError extends Error {
@@ -97,6 +139,50 @@ export function deepFreeze<T>(value: T): T {
   return value;
 }
 
+// JSON.stringify with sorted object keys — same config, same hash,
+// regardless of which source/merge order produced it
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value) ?? "undefined";
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(",")}]`;
+  }
+  const entries = Object.entries(value)
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([key, child]) => `${JSON.stringify(key)}:${stableStringify(child)}`);
+  return `{${entries.join(",")}}`;
+}
+
+// ponytail: FNV-1a, 32-bit — collision-safe enough to tell configs apart in
+// logs, not a security boundary; swap for crypto.subtle if that ever changes
+function fnv1a(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+/** @internal shared with the CLI (--print-fingerprint) — same hash as runtime */
+export function makeFingerprint(config: unknown, raw: unknown): Fingerprint {
+  const meta = (key: string): string | undefined => {
+    const value =
+      raw && typeof raw === "object"
+        ? (raw as Record<string, unknown>)[key]
+        : undefined;
+    return typeof value === "string" ? value : undefined;
+  };
+  const version = meta("_version");
+  const generatedAt = meta("_generatedAt");
+  return {
+    hash: fnv1a(stableStringify(config)),
+    ...(version !== undefined ? { version } : {}),
+    ...(generatedAt !== undefined ? { generatedAt } : {}),
+  };
+}
+
 async function resolveSources(sources: Source[]): Promise<unknown> {
   const failures: string[] = [];
 
@@ -123,7 +209,15 @@ async function resolveSources(sources: Source[]): Promise<unknown> {
  */
 export function attune<S extends StandardSchemaV1>(
   options: AttuneOptions<S>
-): Attuned<StandardSchemaV1.InferOutput<S>> {
+): Attuned<StandardSchemaV1.InferOutput<S>, S> {
+  type T = StandardSchemaV1.InferOutput<S>;
+  type ReadyCallback = (config: T, fingerprint: Fingerprint) => void | Promise<void>;
+
+  // one queue for onLoad and onReady — same machinery, same guarantees
+  const queue: ReadyCallback[] = options.onLoad ? [options.onLoad] : [];
+  let settled: { config: T; fingerprint: Fingerprint } | null = null;
+  let failed = false;
+
   const promise = (async () => {
     const raw = await resolveSources(options.sources);
     const result = await options.schema["~standard"].validate(raw);
@@ -133,14 +227,59 @@ export function attune<S extends StandardSchemaV1>(
     }
 
     const config = deepFreeze(result.value);
-    await options.onLoad?.(config);
-    return config;
+    const fingerprint = deepFreeze(makeFingerprint(config, raw));
+    // index loop: a callback may register more during its await
+    for (let i = 0; i < queue.length; i++) {
+      try {
+        await queue[i]?.(config, fingerprint);
+      } catch (error) {
+        // wrap so the React boundary can tell config failures from app bugs
+        throw new ConfigError(
+          `config callback failed: ${error instanceof Error ? error.message : String(error)}`,
+          []
+        );
+      }
+    }
+    queue.length = 0; // flushed closures must not be pinned for app lifetime
+    settled = { config, fingerprint };
+    return settled;
   })();
 
-  // eager start must not surface as unhandledrejection when nobody awaited yet
-  promise.catch(() => {});
+  promise.catch(() => {
+    failed = true;
+  });
 
-  return { load: () => promise };
+  const onReady = (cb: ReadyCallback): void => {
+    if (settled) {
+      const { config, fingerprint } = settled;
+      if (DEV) {
+        console.warn(
+          "attunement: onReady() registered after the config resolved — the before-first-render guarantee no longer applies. Register at module scope of a module your entry imports."
+        );
+      }
+      // errors surface as unhandled rejections on purpose — a silently
+      // swallowed late callback is worse than a loud one
+      void Promise.resolve().then(() => cb(config, fingerprint));
+    } else if (!failed) {
+      queue.push(cb);
+    }
+    // failed load: wiring for an app that will never render — skip
+  };
+
+  // stable promise identity — React use() re-suspends on a fresh promise
+  const configPromise = promise.then(({ config }) => config);
+  const fingerprintPromise = promise.then(({ fingerprint }) => fingerprint);
+
+  // eager start must not surface as unhandledrejection when nobody awaited yet
+  configPromise.catch(() => {});
+  fingerprintPromise.catch(() => {});
+
+  return {
+    load: () => configPromise,
+    fingerprint: () => fingerprintPromise,
+    onReady,
+    _schema: options.schema,
+  };
 }
 
 export interface FromJsonOptions extends RequestInit {
@@ -178,6 +317,9 @@ export function fromJson(url: string, options: FromJsonOptions = {}): Source {
       let response: Response;
       try {
         response = await fetch(url, {
+          // no-store: a CDN-cached stale config survives reloads and makes
+          // every retry a loop — config must always hit the origin
+          cache: "no-store",
           ...init,
           signal: attemptSignal(timeoutMs, init.signal),
         });
@@ -230,7 +372,24 @@ export function merge(...sources: Source[]): Source {
   };
 }
 
+/**
+ * Wrap a source so its failure means "nothing" instead of an error — an
+ * optional override file 404s, merge() and the source chain fall through.
+ */
+export function optional(source: Source): Source {
+  // async wrapper catches sync throws too, not just rejected promises
+  return async () => {
+    try {
+      return await source();
+    } catch {
+      return undefined;
+    }
+  };
+}
+
 /** Source: read a global injected into index.html (e.g. window.__APP_CONFIG__). */
 export function fromWindow(key: string): Source {
+  // indexing globalThis by arbitrary key needs the record shape; TS's
+  // globalThis type has no string index signature
   return () => (globalThis as Record<string, unknown>)[key];
 }
