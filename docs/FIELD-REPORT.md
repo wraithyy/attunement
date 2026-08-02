@@ -10,6 +10,11 @@ klíčů, 17 konzumentů configu. Nahrazoval se ruční `fetch("/app-config.json
 
 **Legenda:** 🔇 = tichá chyba, nic ji nenahlásí.
 
+> **Stav (2026-07-31):** všechny nálezy adresovány. P5–P8, P14–P16 v 0.4.x
+> (patch batch); P1, P2, P9 v README; P3 (`onReady`), P10 (`bindReact`),
+> P11 (`retry` + default fallback), P12/P13 (testing docs) v API vlně (0.5.0)
+> — viz CHANGELOG a `plans/api-wave.md`.
+
 ---
 
 ## Fáze 1 — první integrace podle README

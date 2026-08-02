@@ -62,7 +62,7 @@ zero-dependency core runs anywhere with `fetch`.
 ```tsx
 // config.ts — module scope, so the fetch starts with the app, not with a render
 import { z } from "zod";
-import { attuneReact, fromWindow, fromJson } from "attunement/react";
+import { attuneReact, fromJson } from "attunement/react";
 import { setApiBaseUrl } from "./api";
 
 export const appConfig = attuneReact({
@@ -70,7 +70,7 @@ export const appConfig = attuneReact({
     API_URL: z.string(),
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("warn"),
   }),
-  sources: [fromWindow("__APP_CONFIG__"), fromJson("/app-config.json")],
+  sources: [fromJson("/app-config.json")],
   onLoad: (config) => {
     setApiBaseUrl(config.API_URL); // runs before first render
   },
@@ -78,15 +78,17 @@ export const appConfig = attuneReact({
 ```
 
 `onLoad` is the **only** hook guaranteed to finish before the first render —
-it's awaited inside the load promise itself. `appConfig.load().then(...)` looks
-equivalent but isn't: it races React's suspense resumption and only wins by
-import-order luck. Wire up anything render-critical (API base URL, router
-basepath, logger) in `onLoad`.
+it's awaited inside the load promise itself. Wire up anything render-critical
+(API base URL, router basepath, logger) in `onLoad`.
+
+The wiring rule: **in the config module** → `onLoad`; **from another module**
+(router, i18n) → `appConfig.onReady()`. This avoids import cycles while keeping
+your critical wiring sequenced before render.
 
 ```tsx
 // main.tsx
 createRoot(el).render(
-  <appConfig.Provider fallback={<Splash />} errorFallback={(e) => <ConfigError error={e} />}>
+  <appConfig.Provider fallback={<Splash />} errorFallback={(error, retry) => <ConfigError error={error} onRetry={retry} />}>
     <App />
   </appConfig.Provider>
 );
@@ -98,9 +100,9 @@ const { API_URL } = appConfig.use();
 ```
 
 Both fallbacks are optional: without `errorFallback` a failed load renders a
-minimal "Configuration failed to load." notice (error details included in dev
-builds only — the message names config keys and source URLs, which end users
-shouldn't see).
+minimal "Configuration failed to load." notice with a Retry button (error details
+in dev only — message names config keys and source URLs, which end users shouldn't
+see). **Clicking Retry performs a full page reload.**
 
 No React? The core is the same thing minus the Provider — await it before
 bootstrap (Angular `APP_INITIALIZER`, Vue `main.ts` — [recipes](./docs/recipes.md#other-frameworks)):
@@ -125,6 +127,46 @@ public/app-config.json   → served at /app-config.json
 src/config.ts            → attuneReact() + schema
 src/main.tsx             → Provider
 ```
+
+### Zero-request injection (dev/staging)
+
+To skip the fetch entirely in dev, inject config into `index.html` at build/serve time. The Vite plugin wires this up:
+
+```ts
+// vite.config.ts
+import { attunement } from "attunement/vite";
+
+export default defineConfig({
+  plugins: [
+    attunement({
+      configFile: "config/app-config.json",
+      injectKey: "__APP_CONFIG__",  // injects into window at dev, placeholder for deploy
+    }),
+  ],
+});
+```
+
+Then add it as a first source:
+
+```tsx
+// config.ts
+import { fromWindow, fromJson } from "attunement/react";
+
+export const appConfig = attuneReact({
+  schema,
+  sources: [
+    fromWindow("__APP_CONFIG__"),  // dev/staging: window global, zero request
+    fromJson("/app-config.json"),  // fallback: fetch from static file
+  ],
+  onLoad: (config) => { /* ... */ },
+});
+```
+
+In dev the first source hits; in production the placeholder is replaced by
+deploy tooling with the real config object (`envsubst`, sed, Helm templating),
+or the window source misses and the fetch fallback runs.
+For **production without injection**, omit the `fromWindow` source — fetching
+alone is safe and simpler.
 
 ### Migrating from a hand-rolled loader
 
@@ -162,16 +204,18 @@ root.render(
 
 | Export | Entry | Description |
 |---|---|---|
-| `attune(options)` | `attunement` | Core factory → `{ load(), fingerprint() }`; promise starts immediately, result is cached |
-| `attuneReact(options)` | `attunement/react` | Core + `{ Provider, use() }` (Suspense + error boundary) |
-| `fromJson(url, options?)` | both | JSON fetch source with timeout + retry |
-| `fromWindow(key)` | both | `window` global source |
-| `merge(...sources)` | both | Combine sources: parallel fetch, shallow merge, later wins |
+| `attune(options)` → `{ load(), fingerprint(), onReady() }` | `attunement` | Core factory; promise starts at module scope, result cached |
+| `attuneReact(options)` → `{ ..., Provider, use() }` | `attunement/react` | Core + React bindings (Suspense + error boundary) |
+| `bindReact(attuned)` | `attunement/react` | React binding over an existing core handle (schema in CLI modules, wiring via onReady) |
+| `fromJson(url, options?)` | both | JSON fetch source with timeout + retry; defaults to `cache: "no-store"` |
+| `fromWindow(key)` | both | `window` global source (injected config, zero request) |
+| `merge(...sources)` | both | Combine sources: parallel, shallow merge, later wins |
+| `optional(source)` | both | Wrap source: nullish or error → skip, don't fail the chain |
 | `ConfigError` | both | Thrown/passed on validation failure; carries per-key issues |
-| `createTestProvider(config, overrides)` | `attunement/testing` | Synchronous Provider for tests — test-only |
-| `attunement` CLI (`check`, `docs`) | bin / `attunement/cli` | Config validation in CI, schema docs — CI-only, never shipped |
-| `AttunementDevtools` / `attunementDevtoolsPlugin` / `fromOverrides` | `attunement/devtools` | Dev override panel — dev-only, gate the import |
-| `attunement(options?)` | `attunement/vite` | Vite plugin — build-time only, lives in `vite.config.ts` |
+| `createTestProvider(config, overrides)` | `attunement/testing` | Synchronous Provider for tests — test-only, onReady never runs |
+| `attunement check`, `attunement docs` | bin / `attunement/cli` | Config validation in CI, schema docs; supports `--schema` (Node ≥ 22.18 / tsx) |
+| `AttunementDevtools` / `attunementDevtoolsPlugin(config, options)` | `attunement/devtools` | Dev override panel — dev-only, gate the import; options: `{ storageKey?, fields? }` |
+| `attunement({ configFile?, injectKey? })` | `attunement/vite` | Vite plugin — reload on change, HTML injection; build-time only |
 
 Types flow from the schema — you never write generics.
 
@@ -207,6 +251,21 @@ render(<TestProvider><UserList /></TestProvider>);
 
 Overrides are validated against your schema — a typo fails the test at setup
 with a named key, not three asserts later.
+
+**Important:** `onReady()` callbacks do not run under `createTestProvider` —
+only `onLoad` is called. If a callback under test depends on wiring registered
+via `onReady()`, register it in the test directly:
+
+```tsx
+beforeEach(() => {
+  appConfig.onReady(() => {
+    // setup wiring
+  });
+});
+```
+
+For this reason, keep `onReady` callbacks in their own modules and import them
+eagerly from your main entry point so they register during config init.
 
 ## How it works
 
@@ -247,33 +306,32 @@ maintenance flag next to the main config
 ## Vite plugin
 
 Optional — Vite's `public/` directory covers the basics; the plugin adds
-reload-on-change and the HTML inject:
+reload-on-change and the HTML inject. Specified in `vite.config.ts`:
 
 ```ts
-// vite.config.ts
 import { attunement } from "attunement/vite";
 
 export default defineConfig({
   plugins: [
     attunement({
-      configFile: "config/app-config.json",
-      // required for the fromWindow("__APP_CONFIG__") source in Quick start —
-      // without it that source always misses and silently falls through
-      injectKey: "__APP_CONFIG__",
+      configFile: "config/app-config.json",  // default: "config/app-config.json"
+      injectKey: "__APP_CONFIG__",           // optional: inject window global
     }),
   ],
 });
 ```
 
-- Dev server serves the file at `/app-config.json` and **full-reloads on
-  change** — edit config, see the app re-attune
-- `injectKey: "__APP_CONFIG__"` additionally injects the config into
-  `index.html` for `fromWindow`: real content in dev, a
-  `"__ATTUNEMENT_CONFIG__"` placeholder in builds for your deploy pipeline to
-  replace
+**Reload on change:** Dev server watches the config file and triggers
+a **full page reload** on any edit — config module edits full-reload by design
+(config-dependent wiring would be in an inconsistent state if only the
+callback ran).
 
-Astro (and other Vite-based frameworks) pass it through the `vite` key of
-their own config.
+**HTML injection** (when `injectKey` is set):
+- Dev: injects the real config object into `window[key]` in `index.html`
+- Build: injects a placeholder string for your deploy pipeline to replace
+
+Astro and other Vite-based frameworks pass it through the `vite` key of their
+own config.
 
 ## Devtools
 
@@ -313,12 +371,14 @@ As a TanStack Devtools plugin instead — same rule, keep the
 `<TanStackDevtools>` setup:
 
 ```tsx
-<TanStackDevtools plugins={[attunementDevtoolsPlugin(appConfig)]} />
+<TanStackDevtools plugins={[attunementDevtoolsPlugin(appConfig, { storageKey: "my_config_overrides" })]} />
 ```
 
 The standalone widget sits bottom-right by default; pass
 `position="bottom-left"` (or `top-*`) when TanStack Query devtools or
-react-scan already live there.
+react-scan already live there. Plugin options: `storageKey` (localStorage key
+for overrides), `fields` (override introspected field list — for Valibot or
+ArkType schemas where introspection isn't yet supported).
 
 Overrides live in localStorage, validated by the schema on load like any other
 config; saving reloads the page (config loads once per page load, so a reload
@@ -337,14 +397,43 @@ attunement check --schema src/config-schema.ts config/*.json --diff
 - Validation failures print the same per-key, did-you-mean errors as at runtime
 - `--diff` fails when files disagree on top-level keys (key added to prod,
   forgotten in stage)
-- Secret hygiene warnings: keys named like credentials (`*_SECRET`, `*_TOKEN`,
-  `*_API_KEY`) or values that look like generated secrets — SPA config is
-  public, nothing in it is secret
+- `--strict` exits 1 on secret hygiene warnings (keys named like credentials:
+  `*_SECRET`, `*_TOKEN`, `*_API_KEY`, or values looking like generated secrets)
+- `--print-fingerprint` outputs `<file> <hash> [version]` per file (for deploy logs)
 - `attunement docs --schema ...` renders a markdown table of keys, types,
   defaults and `.describe()` descriptions (zod schemas)
 
 `--schema` takes any module exporting the schema (`schema` or default export);
-`.ts` works directly on Node ≥ 22.18. Exit codes: 0 ok, 1 failure, 2 usage.
+`.ts` works directly on Node ≥ 22.18 (tsx for older Node). **Schema module
+must use relative imports only** — it's loaded standalone by the CLI and
+cannot pull in app code.
+
+### Schema organization (CLI + React)
+
+If your app also has non-React CLI tooling (build, migration, admin tasks), split the config in three files:
+
+```ts
+// src/config-schema.ts — schema only, zero imports except zod
+import { z } from "zod";
+export const schema = z.object({
+  API_URL: z.string(),
+  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]),
+});
+
+// src/config.ts — core handle, same module scope as main.tsx/cli.ts
+import { attune } from "attunement";
+import { schema } from "./config-schema";
+export const appConfig = attune({ schema, sources: [fromJson("/app-config.json")] });
+
+// src/config.react.tsx — React bindings (you don't need this yet)
+import { bindReact } from "attunement/react";
+import { appConfig } from "./config";
+export const AppConfig = bindReact(appConfig);  // independent context if multiple bindings needed
+```
+
+**Let inference flow:** avoid annotating the handle (`const c: Attuned<Config> = ...`);
+it erases the schema type and `use()` degrades to unknown. Let TypeScript infer
+from the `attune()` / `bindReact()` call.
 
 ## Recipes
 
