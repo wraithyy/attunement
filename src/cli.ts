@@ -5,6 +5,8 @@ import { formatIssues } from "./index.js";
 export interface CheckResult {
   ok: boolean;
   message?: string;
+  /** Validated output (defaults applied) — present when ok. */
+  value?: unknown;
 }
 
 export async function checkConfig(
@@ -15,7 +17,7 @@ export async function checkConfig(
   if (result.issues) {
     return { ok: false, message: formatIssues(result.issues, raw) };
   }
-  return { ok: true };
+  return { ok: true, value: result.value };
 }
 
 /** Keys present in some files but missing in others — the classic prod/stage drift. */
@@ -76,6 +78,10 @@ interface ZodLikeDef {
   /** zod 4: "boolean", "default"... */
   type?: string;
   innerType?: ZodLikeField;
+  /** zod 3 ZodEffects (preprocess/refine) wraps here */
+  schema?: ZodLikeField;
+  /** zod 4 pipe (preprocess/stringbool): out is the result type */
+  out?: ZodLikeField;
   /** zod 3: thunk; zod 4: plain value */
   defaultValue?: (() => unknown) | unknown;
   /** zod 3 enum literals */
@@ -97,7 +103,8 @@ function unwrap(field: ZodLikeField): {
   let defaultValue: unknown;
   while (true) {
     const def = current._def;
-    const inner = def?.innerType;
+    if (!def) break;
+    const inner = def.innerType ?? def.schema ?? def.out;
     if (!inner) break;
     if (def.typeName === "ZodDefault" || def.type === "default") {
       defaultValue =
@@ -165,10 +172,11 @@ export function introspectShape(schema: unknown): FieldInfo[] {
 
 /**
  * Markdown table of keys, types, defaults and `.describe()` descriptions.
- * Requires a zod object schema — see `introspectShape`.
+ * Requires a zod object schema — see `introspectShape` — or pass `fields`
+ * explicitly (the escape hatch for Valibot/ArkType and future zod shapes).
  */
-export function docsTable(schema: unknown): string {
-  const rows = introspectShape(schema).map((field) => {
+export function docsTable(schema: unknown, fields?: FieldInfo[]): string {
+  const rows = (fields ?? introspectShape(schema)).map((field) => {
     const type =
       field.type === "enum"
         ? (field.values ?? []).map((v) => JSON.stringify(v)).join(" \\| ")
