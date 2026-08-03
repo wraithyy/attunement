@@ -373,6 +373,27 @@ export function merge(...sources: Source[]): Source {
 }
 
 /**
+ * @internal Contract between fromOverrides (devtools entry) and the default
+ * errorFallback (react entry). Lives on globalThis so the react entry never
+ * imports the dev-only devtools code: fromOverrides registers on call (users
+ * DEV-gate that call), so in production the registry stays empty and the
+ * fallback renders no recovery UI.
+ */
+export interface OverridesHandler {
+  storageKey: string;
+  /** Currently stored overrides under this handler's key. */
+  read: () => Record<string, unknown>;
+  /** Clear storage and strip config.* URL params (no reload — caller reloads once). */
+  clear: () => void;
+}
+
+/** @internal */
+export function overridesRegistry(): OverridesHandler[] {
+  const g = globalThis as { __ATTUNEMENT_DEV_OVERRIDES__?: OverridesHandler[] };
+  return (g.__ATTUNEMENT_DEV_OVERRIDES__ ??= []);
+}
+
+/**
  * Wrap a source so its failure means "nothing" instead of an error — an
  * optional override file 404s, merge() and the source chain fall through.
  */
