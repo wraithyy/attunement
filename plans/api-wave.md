@@ -2,7 +2,7 @@
 
 ## Context
 
-Field report (docs/FIELD-REPORT.md) identified structural issues that need API
+Field report (untracked field report) identified structural issues that need API
 additions, not docs: module cycles around `onLoad` (P3), config module as a
 React/CLI choke point (P10), no path out of a rejected load (P11), test
 provider ergonomics (P12/P13). All additive — one minor release.
@@ -230,12 +230,12 @@ Decisions (grilled 2026-07-31 + panel):
 
 ## Task 3.2: Changeset + field report cross-off
 - **Agent**: main session
-- **Files**: .changeset/*.md, docs/FIELD-REPORT.md
+- **Files**: .changeset/*.md, the untracked field report
 - **Depends on**: all
 - **Acceptance**: minor changeset covering onReady/bindReact/retry/onError/
   optional/no-store/--strict/--print-fingerprint/fields + changelog notes:
   "Attuned hand-built mocks need _schema/onReady", "fromJson now defaults
-  cache: no-store (override with { cache: 'default' })"; FIELD-REPORT gets
+  cache: no-store (override with { cache: 'default' })"; the field report gets
   "addressed in" notes per item.
 
 ## Out of scope
