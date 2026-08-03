@@ -1,6 +1,6 @@
 {
   "name": "attunement",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Typed, validated runtime config for SPAs. The app attunes to its environment before first render.",
   "keywords": [
     "runtime-config",
