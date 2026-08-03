@@ -49,16 +49,56 @@ interface BoundaryProps {
 
 const retry = () => location.reload();
 
+// ponytail: hardcoded default storage key (kept in sync with
+// attunement/devtools) — react must not import the dev-only devtools entry;
+// a custom fromOverrides storageKey escapes this detection
+const OVERRIDES_KEY = "attunement:overrides";
+
+function activeOverrides(): Record<string, unknown> {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(OVERRIDES_KEY) ?? "{}");
+    return raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
 /**
  * Default errorFallback: names the failure instead of a white page. The
  * message (config keys, source URLs) is dev-only — it doesn't belong in
- * front of end users.
+ * front of end users. When dev overrides are active they're the most likely
+ * cause and a plain Retry would reload into the same failure — offer the
+ * only exit that works and say why.
  */
 function DefaultErrorFallback({ error }: { error: Error }) {
+  const overrides = activeOverrides();
+  const overrideKeys = Object.keys(overrides);
   return (
     <div role="alert" style={{ fontFamily: "system-ui, sans-serif", padding: 16 }}>
       <strong>Configuration failed to load.</strong>{" "}
       <button onClick={retry}>Retry</button>
+      {overrideKeys.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          Dev overrides are active and may be the cause:
+          <pre style={{ fontSize: 12 }}>
+            {overrideKeys.map((k) => `  ${k} = ${JSON.stringify(overrides[k])}`).join("\n")}
+          </pre>
+          <button
+            onClick={() => {
+              try {
+                localStorage.removeItem(OVERRIDES_KEY);
+              } catch {
+                // private mode — nothing stored anyway
+              }
+              retry();
+            }}
+          >
+            Clear overrides and reload
+          </button>
+        </div>
+      )}
       {DEV && (
         <pre style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{error.message}</pre>
       )}

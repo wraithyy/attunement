@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { attune, merge } from "./index.js";
-import { clearOverrides, fromOverrides, readOverrides, writeOverrides } from "./devtools.js";
+import {
+  attunementDevtoolsPlugin,
+  clearOverrides,
+  fromOverrides,
+  readOverrides,
+  writeOverrides,
+} from "./devtools.js";
 
 function stubStorage(initial: Record<string, string> = {}) {
   const store = new Map(Object.entries(initial));
@@ -80,5 +86,23 @@ describe("overrides storage helpers", () => {
     expect(readOverrides("custom")).toEqual({ A: 1 });
     clearOverrides("custom");
     expect(readOverrides("custom")).toEqual({});
+  });
+});
+
+describe("attunementDevtoolsPlugin", () => {
+  // regression: DevtoolsProps must accept the CORE handle — AttunedReact is
+  // invariant in T (its context), so a typed React handle used to fail tsc,
+  // and bindReact users had to export a bound handle just for devtools
+  it("accepts a typed core attune() handle", () => {
+    const core = attune({
+      schema: z.object({
+        API_URL: z.string(),
+        LOG_LEVEL: z.enum(["debug", "info", "warn"]).default("warn"),
+      }),
+      sources: [() => new Promise<never>(() => {})],
+    });
+
+    const plugin = attunementDevtoolsPlugin(core);
+    expect(plugin.name).toBe("Attunement");
   });
 });
