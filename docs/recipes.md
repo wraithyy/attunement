@@ -111,6 +111,20 @@ Then add the `onError` prop to the Provider for boundary-caught errors:
 </appConfig.Provider>
 ```
 
+A custom `errorFallback` replaces the default one — including its dev-override
+recovery. Keep it by dropping in `OverrideRecovery` (renders nothing when no
+overrides are stored, so it's safe unconditionally):
+
+```tsx
+import { OverrideRecovery } from "attunement/devtools"; // DEV-gate this import
+
+errorFallback={(error, retry) => (
+  <ConfigErrorUI error={error} onRetry={retry}>
+    <OverrideRecovery />
+  </ConfigErrorUI>
+)}
+```
+
 ## Serving the config file per environment
 
 A stale config cached at the CDN is the worst incident attunement can cause

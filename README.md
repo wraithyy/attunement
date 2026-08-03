@@ -230,6 +230,8 @@ root.render(
 | `createTestProvider(config, overrides)` | `attunement/testing` | Synchronous Provider for tests — test-only, onReady never runs |
 | `attunement check`, `attunement docs` | bin / `attunement/cli` | Config validation in CI, schema docs; supports `--schema` (Node ≥ 22.18 / tsx) |
 | `AttunementDevtools` / `attunementDevtoolsPlugin(config, options)` | `attunement/devtools` | Dev override panel — dev-only, gate the import; options: `{ storageKey?, fields? }` |
+| `fromOverrides(storageKey?)` | `attunement/devtools` | Override source (localStorage + `?config.KEY=value` URL bootstrap); registers the error-fallback recovery |
+| `OverrideRecovery` | `attunement/devtools` | "Clear overrides and reload" block for custom errorFallbacks; renders nothing without overrides |
 | `attunement({ configFile?, injectKey? })` | `attunement/vite` | Vite plugin — reload on change, HTML injection; build-time only |
 
 Types flow from the schema — you never write generics.
@@ -402,7 +404,9 @@ ArkType schemas where introspection isn't yet supported).
 Overrides live in localStorage, validated by the schema on load like any other
 config; saving reloads the page (config loads once per page load, so a reload
 is how changes apply). `?config.KEY=value` in the URL bootstraps an override —
-handy for sharing a repro link.
+handy for sharing a repro link. If a shared override breaks the load, the
+error fallback offers "Clear overrides and reload", which clears storage and
+strips the `config.*` params so the link can't reseed itself.
 
 ## CI check
 
