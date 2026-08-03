@@ -1,10 +1,16 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { attuneReact, ConfigError } from "./react.js";
+import { attuneReact, ConfigError, overridesRegistry } from "./react.js";
+import { fromOverrides, OverrideRecovery } from "./devtools.js";
 import { Component, type ReactNode } from "react";
+
+beforeEach(() => {
+  overridesRegistry().length = 0; // registry lives on globalThis — isolate tests
+  localStorage.clear();
+});
 
 const schema = z.object({ API_URL: z.string() });
 
@@ -92,11 +98,14 @@ describe("ConfigBoundary", () => {
     expect(typeof gotRetry).toBe("function");
   });
 
-  it("offers 'Clear overrides and reload' when dev overrides are active", async () => {
-    localStorage.setItem("attunement:overrides", JSON.stringify({ MAX: "abc" }));
+  it("offers 'Clear overrides and reload' when a fromOverrides handler reports overrides — custom storageKey included", async () => {
+    // custom key: regression for the hardcoded-default-key gap (report #3 F2)
+    localStorage.setItem("custom:overrides", JSON.stringify({ MAX: "abc" }));
+    fromOverrides("custom:overrides");
     const config = makeConfig([() => Promise.reject(new Error("outage"))]);
     const reload = vi.fn();
-    vi.stubGlobal("location", { reload });
+    const originalLocation = location;
+    vi.stubGlobal("location", { ...originalLocation, href: originalLocation.href, reload });
 
     const el = await render(
       <config.Provider>
@@ -110,14 +119,40 @@ describe("ConfigBoundary", () => {
       b.textContent?.startsWith("Clear overrides")
     );
     await act(async () => clear?.click());
-    expect(localStorage.getItem("attunement:overrides")).toBeNull();
+    expect(localStorage.getItem("custom:overrides")).toBeNull();
     expect(reload).toHaveBeenCalled();
 
     vi.unstubAllGlobals();
-    localStorage.removeItem("attunement:overrides");
   });
 
-  it("shows no overrides block when none are stored", async () => {
+  it("clearing also strips config.* params from the URL (report #3 F1)", async () => {
+    localStorage.setItem("attunement:overrides", JSON.stringify({ MAX: "abc" }));
+    fromOverrides();
+    const config = makeConfig([() => Promise.reject(new Error("outage"))]);
+    const reload = vi.fn();
+    history.replaceState(null, "", "/form?config.MAX=abc&other=1");
+    // keep the real origin — jsdom rejects replaceState to a foreign one
+    vi.stubGlobal("location", { href: document.URL, reload });
+
+    const el = await render(
+      <config.Provider>
+        <span>never</span>
+      </config.Provider>
+    );
+    const clear = Array.from(el.querySelectorAll("button")).find((b) =>
+      b.textContent?.startsWith("Clear overrides")
+    );
+    await act(async () => clear?.click());
+
+    // the URL bootstrap must not reseed storage on the reload
+    expect(window.history.state).toBeNull();
+    expect(document.location.pathname + document.location.search).toBe("/form?other=1");
+    expect(reload).toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("shows no overrides block when no handler reports any", async () => {
+    fromOverrides();
     const config = makeConfig([() => Promise.reject(new Error("outage"))]);
     const el = await render(
       <config.Provider>
@@ -125,6 +160,17 @@ describe("ConfigBoundary", () => {
       </config.Provider>
     );
     expect(el.textContent).not.toContain("Dev overrides");
+  });
+
+  it("OverrideRecovery renders the same recovery for custom fallbacks, null without overrides", async () => {
+    const empty = await render(<OverrideRecovery />);
+    expect(empty.textContent).toBe("");
+
+    localStorage.setItem("attunement:overrides", JSON.stringify({ K: 1 }));
+    fromOverrides();
+    const el = await render(<OverrideRecovery />);
+    expect(el.textContent).toContain("Dev overrides are active");
+    expect(el.textContent).toContain("K = 1");
   });
 
   it("rethrows app bugs to the outer boundary instead of masking them", async () => {

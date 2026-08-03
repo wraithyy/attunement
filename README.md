@@ -104,6 +104,21 @@ minimal "Configuration failed to load." notice with a Retry button (error detail
 in dev only — message names config keys and source URLs, which end users shouldn't
 see). **Clicking Retry performs a full page reload.**
 
+When `fromOverrides()` is in play, the default notice also detects stored dev
+overrides and offers "Clear overrides and reload" — clearing storage **and**
+stripping `config.*` URL params, so a broken shared repro link can't reseed
+itself. A custom `errorFallback` replaces all of that; drop
+`<OverrideRecovery />` from `attunement/devtools` into it to keep the recovery
+(renders nothing when no overrides are stored):
+
+```tsx
+errorFallback={(error, retry) => (
+  <MyBrandedError error={error} onRetry={retry}>
+    <OverrideRecovery />
+  </MyBrandedError>
+)}
+```
+
 No React? The core is the same thing minus the Provider — await it before
 bootstrap (Angular `APP_INITIALIZER`, Vue `main.ts` — [recipes](./docs/recipes.md#other-frameworks)):
 

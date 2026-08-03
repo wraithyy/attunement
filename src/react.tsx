@@ -7,7 +7,14 @@ import {
   type Context,
   type ReactNode,
 } from "react";
-import { attune, ConfigError, DEV, type AttuneOptions, type Attuned } from "./index.js";
+import {
+  attune,
+  ConfigError,
+  DEV,
+  overridesRegistry,
+  type AttuneOptions,
+  type Attuned,
+} from "./index.js";
 
 export * from "./index.js";
 
@@ -49,49 +56,31 @@ interface BoundaryProps {
 
 const retry = () => location.reload();
 
-// ponytail: hardcoded default storage key (kept in sync with
-// attunement/devtools) — react must not import the dev-only devtools entry;
-// a custom fromOverrides storageKey escapes this detection
-const OVERRIDES_KEY = "attunement:overrides";
-
-function activeOverrides(): Record<string, unknown> {
-  try {
-    const raw: unknown = JSON.parse(localStorage.getItem(OVERRIDES_KEY) ?? "{}");
-    return raw && typeof raw === "object" && !Array.isArray(raw)
-      ? (raw as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
-  }
-}
-
 /**
  * Default errorFallback: names the failure instead of a white page. The
  * message (config keys, source URLs) is dev-only — it doesn't belong in
- * front of end users. When dev overrides are active they're the most likely
- * cause and a plain Retry would reload into the same failure — offer the
- * only exit that works and say why.
+ * front of end users. When dev overrides are active (fromOverrides
+ * registered a recovery handler and it reports stored values) they're the
+ * most likely cause and a plain Retry would reload into the same failure —
+ * offer the only exit that works and say why. All override knowledge lives
+ * in the handler; in production the registry is empty.
  */
 function DefaultErrorFallback({ error }: { error: Error }) {
-  const overrides = activeOverrides();
-  const overrideKeys = Object.keys(overrides);
+  const handlers = overridesRegistry();
+  const active = handlers.flatMap((handler) => Object.entries(handler.read()));
   return (
     <div role="alert" style={{ fontFamily: "system-ui, sans-serif", padding: 16 }}>
       <strong>Configuration failed to load.</strong>{" "}
       <button onClick={retry}>Retry</button>
-      {overrideKeys.length > 0 && (
+      {active.length > 0 && (
         <div style={{ marginTop: 8 }}>
           Dev overrides are active and may be the cause:
           <pre style={{ fontSize: 12 }}>
-            {overrideKeys.map((k) => `  ${k} = ${JSON.stringify(overrides[k])}`).join("\n")}
+            {active.map(([key, value]) => `  ${key} = ${JSON.stringify(value)}`).join("\n")}
           </pre>
           <button
             onClick={() => {
-              try {
-                localStorage.removeItem(OVERRIDES_KEY);
-              } catch {
-                // private mode — nothing stored anyway
-              }
+              for (const handler of handlers) handler.clear();
               retry();
             }}
           >

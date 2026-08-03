@@ -6,7 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import { introspectShape, type FieldInfo } from "./cli.js";
-import type { Attuned, Source } from "./index.js";
+import { overridesRegistry, type Attuned, type Source } from "./index.js";
 
 const DEFAULT_KEY = "attunement:overrides";
 
@@ -70,6 +70,25 @@ function urlOverrides(): Record<string, unknown> {
  * Dev-only by your own guard — don't ship it enabled to production.
  */
 export function fromOverrides(storageKey = DEFAULT_KEY): Source {
+  // recovery handler for the error fallback: this is the one place that
+  // knows both the storage key and the config.* URL bootstrap, and it only
+  // runs where the user already DEV-gates the fromOverrides() call
+  const registry = overridesRegistry();
+  if (!registry.some((handler) => handler.storageKey === storageKey)) {
+    registry.push({
+      storageKey,
+      read: () => readOverrides(storageKey),
+      clear: () => {
+        clearOverrides(storageKey);
+        // the URL bootstrap would reseed storage on reload — strip it too
+        const url = new URL(location.href);
+        for (const key of [...url.searchParams.keys()]) {
+          if (key.startsWith("config.")) url.searchParams.delete(key);
+        }
+        history.replaceState(null, "", url.toString());
+      },
+    });
+  }
   return () => {
     const stored = readOverrides(storageKey);
     const fromUrl = urlOverrides();
@@ -79,6 +98,35 @@ export function fromOverrides(storageKey = DEFAULT_KEY): Source {
     const overrides = { ...stored, ...fromUrl };
     return Object.keys(overrides).length > 0 ? overrides : undefined;
   };
+}
+
+/**
+ * Recovery block for custom errorFallbacks: lists active dev overrides and
+ * offers "Clear overrides and reload". Renders nothing when no overrides
+ * are stored — safe to include unconditionally. The default errorFallback
+ * shows the same recovery on its own; this export exists for branded or
+ * localized fallbacks that replace it.
+ */
+export function OverrideRecovery() {
+  const handlers = overridesRegistry();
+  const active = handlers.flatMap((handler) => Object.entries(handler.read()));
+  if (active.length === 0) return null;
+  return (
+    <div style={{ marginTop: 8 }}>
+      Dev overrides are active and may be the cause:
+      <pre style={{ fontSize: 12 }}>
+        {active.map(([key, value]) => `  ${key} = ${JSON.stringify(value)}`).join("\n")}
+      </pre>
+      <button
+        onClick={() => {
+          for (const handler of handlers) handler.clear();
+          location.reload();
+        }}
+      >
+        Clear overrides and reload
+      </button>
+    </div>
+  );
 }
 
 // --- panel ---
