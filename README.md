@@ -12,7 +12,7 @@
 - **Race-free** — in React nothing renders before config is loaded and valid (Suspense gate); elsewhere `await load()` before bootstrap
 - **Test-ready** — `createTestProvider` gives components config synchronously, no fetch, no mocks
 - **Tooling included** — `attunement check` validates config files in CI, dev override panel (standalone or TanStack Devtools), Vite plugin with reload-on-change
-- **Tiny** — zero dependencies, ~1 kB core, tree-shakable ESM
+- **Tiny** — zero dependencies, ~2 kB gzip core, tree-shakable ESM
 - **Framework-agnostic core** — React 19 adapter included; Angular/Vue/vanilla use the same core ([recipes](./docs/recipes.md#other-frameworks)); multiple independent instances per app
 
 **[Why](#why) · [Install](#install) · [Quick start](#quick-start) · [API](#api) ·
@@ -37,7 +37,7 @@ library is for.
 
 | | Runtime (no rebuild) | Schema validation | Typed config | Blocks render until ready | Tooling | Runtime cost |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
-| **attunement** | ✅ | ✅ any Standard Schema, in the running app | ✅ inferred from schema | ✅ Suspense gate | dev override panel, CI check CLI, Vite plugin | ~1 kB, zero deps |
+| **attunement** | ✅ | ✅ any Standard Schema, in the running app | ✅ inferred from schema | ✅ Suspense gate | dev override panel, CI check CLI, Vite plugin | ~2 kB gzip, zero deps |
 | `import.meta.env` / [import-meta-env](https://github.com/runtime-env/import-meta-env) | ❌ build-time | ⚠️ primitive type check at inject time, nothing at runtime | ✅ generated `.d.ts` | — | editor types | none (build-time) |
 | hand-rolled `window._env_` + `envsubst` | ✅ | ❌ unless you write it | ❌ hand-written | ❌ DIY — a stale or 404'd `env.js` fails silently | ❌ | none |
 | `runtime-env-cra`, `react-inject-env` (dormant since ~2021) | ✅ | ❌ | ❌ | ❌ | ❌ | tiny |
@@ -114,10 +114,15 @@ itself. A custom `errorFallback` replaces all of that; drop
 ```tsx
 errorFallback={(error, retry) => (
   <MyBrandedError error={error} onRetry={retry}>
-    <OverrideRecovery />
+    {import.meta.env.DEV && <OverrideRecovery />}
   </MyBrandedError>
 )}
 ```
+
+(The DEV gate lets the bundler drop the devtools bytes — ungated it renders
+null in production, but ships.) For localized error UIs, build the message
+from `error.issues` (`ConfigError` carries the per-key Standard Schema
+issues) rather than rendering `error.message` verbatim.
 
 No React? The core is the same thing minus the Provider — await it before
 bootstrap (Angular `APP_INITIALIZER`, Vue `main.ts` — [recipes](./docs/recipes.md#other-frameworks)):
@@ -227,9 +232,12 @@ root.render(
 | `merge(...sources)` | both | Combine sources: parallel, shallow merge, later wins |
 | `optional(source)` | both | Wrap source: nullish or error → skip, don't fail the chain |
 | `ConfigError` | both | Thrown/passed on validation failure; carries per-key issues |
+| `safeUrlOrPath(value)` | both | Refinement predicate for URL-shaped values: same-origin path or absolute http(s) URL; rejects protocol-relative and non-http schemes |
 | `createTestProvider(config, overrides)` | `attunement/testing` | Synchronous Provider for tests — test-only, onReady never runs |
 | `attunement check`, `attunement docs` | bin / `attunement/cli` | Config validation in CI, schema docs; supports `--schema` (Node ≥ 22.18 / tsx) |
 | `AttunementDevtools` / `attunementDevtoolsPlugin(config, options)` | `attunement/devtools` | Dev override panel — dev-only, gate the import; options: `{ storageKey?, fields? }` |
+| `fromOverrides(storageKey?)` | `attunement/devtools` | Override source (localStorage + `?config.KEY=value` URL bootstrap); registers the error-fallback recovery |
+| `OverrideRecovery` | `attunement/devtools` | "Clear overrides and reload" block for custom errorFallbacks; renders nothing without overrides |
 | `attunement({ configFile?, injectKey? })` | `attunement/vite` | Vite plugin — reload on change, HTML injection; build-time only |
 
 Types flow from the schema — you never write generics.
@@ -402,7 +410,12 @@ ArkType schemas where introspection isn't yet supported).
 Overrides live in localStorage, validated by the schema on load like any other
 config; saving reloads the page (config loads once per page load, so a reload
 is how changes apply). `?config.KEY=value` in the URL bootstraps an override —
-handy for sharing a repro link.
+handy for sharing a repro link. If a shared override breaks the load, the
+error fallback offers "Clear overrides and reload", which clears storage and
+strips the `config.*` params so the link can't reseed itself. (The default
+fallback's recovery *strings* live in the react entry — a few hundred inert
+bytes in production; all override logic stays in `attunement/devtools` and
+never registers there.)
 
 ## CI check
 

@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { attune, ConfigError, fromJson, fromWindow, merge, optional } from "./index.js";
+import {
+  attune,
+  ConfigError,
+  fromJson,
+  fromWindow,
+  merge,
+  optional,
+  safeUrlOrPath,
+} from "./index.js";
 
 const schema = z.object({
   API_URL: z.string(),
@@ -115,6 +123,19 @@ describe("attune", () => {
     }).load();
 
     await expect(promise).rejects.toThrow("bootstrap failed");
+  });
+});
+
+describe("error message easter egg", () => {
+  // the prod branch (plain "Invalid runtime config:") can't be exercised
+  // here — DEV is a module-init const and import.meta.env is per-module in
+  // vitest; prod elimination of DEV branches is verified on a real
+  // `vite build` instead (see plans/api-wave.md verification)
+  it("keeps the magic word in dev builds", async () => {
+    const message = await attune({ schema, sources: [() => ({ API_URL: 42 })] })
+      .load()
+      .catch((e: Error) => e.message);
+    expect(message).toContain("you didn't say the magic word");
   });
 });
 
@@ -514,5 +535,27 @@ describe("fromJson", () => {
       fromJson("/app-config.json", { timeoutMs: 10, retries: 0 })()
     ).rejects.toThrow(/timeout|timed out/i);
     vi.unstubAllGlobals();
+  });
+});
+
+describe("safeUrlOrPath", () => {
+  it.each([
+    "/api",
+    "/app-config.json?v=abc",
+    "https://api.example.com/v1",
+    "http://localhost:8080",
+  ])("accepts %s", (value) => {
+    expect(safeUrlOrPath(value)).toBe(true);
+  });
+
+  it.each([
+    "//evil.example.com",
+    "/\\evil.example.com",
+    "javascript:alert(1)",
+    "ftp://files.example.com",
+    "example.com/api",
+    "",
+  ])("rejects %j", (value) => {
+    expect(safeUrlOrPath(value)).toBe(false);
   });
 });

@@ -47,8 +47,8 @@ bootstrap (→ `onLoad` + Suspense) and the override panel
    wrap it in the framework's own suspense/context idiom. Nothing in core may
    block a future adapter: no JSX, no hooks, no framework types.
 2. **Tree-shaking.** `sideEffects: false`, ESM only, named exports, one entry
-   per concern. An app importing `attunement` ships the loader (~1 KB), nothing
-   else. CLI/devtools never leak into app bundles.
+   per concern. An app importing `attunement` ships the loader (~2 kB gzip),
+   nothing else. CLI/devtools never leak into app bundles.
 3. **Standard Schema.** Zod/Valibot/ArkType all work; the schema is the single
    source of truth for types, validation, defaults — and docs generation and
    the devtools panel UI.
