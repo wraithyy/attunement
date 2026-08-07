@@ -1,5 +1,26 @@
 # attunement
 
+## 0.6.0
+
+### Minor Changes
+
+- 043f2b9: New `safeUrlOrPath` predicate: refinement for config values that become
+  network targets — accepts same-origin paths and absolute http(s) URLs,
+  rejects protocol-relative URLs (`//evil`, `/\evil`), non-http schemes and
+  bare hostnames. Compose it via `.refine(safeUrlOrPath, ...)` with any
+  Standard Schema library. Plus hardening recipes: build-id cache-busting,
+  environment-dependent validation (`buildSchema({ isProd })` + superRefine),
+  and a localized error fallback built from `ConfigError.issues`.
+
+### Patch Changes
+
+- 5c1214c: Validation error messages drop the "you didn't say the magic word" easter egg
+  in production builds — custom errorFallbacks render `error.message` to end
+  users, and a broken deploy is not a dev-only situation. Dev builds and the
+  CLI keep it. For localized error UIs, build from `ConfigError.issues`
+  instead of `error.message`. Docs: `OverrideRecovery` usage is shown
+  DEV-gated (ungated renders null in production but ships the devtools bytes).
+
 ## 0.5.2
 
 ### Patch Changes
