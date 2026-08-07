@@ -129,6 +129,49 @@ The static import is fine as long as every use sits behind the DEV gate —
 the bundler then tree-shakes the devtools code out of production. Ungated it
 still renders null in production, just ships the bytes.
 
+## Localized error fallback
+
+`error.message` is English and technical. For a translated error UI, build
+the copy from `ConfigError.issues` (the per-key Standard Schema issues)
+instead of rendering the message verbatim — and keep the Retry +
+`OverrideRecovery` wiring the default fallback would have given you:
+
+```tsx
+// main.tsx
+import { ConfigError } from "attunement";
+import { OverrideRecovery } from "attunement/devtools";
+import { t } from "./i18n"; // your i18n function, initialized before render
+
+<appConfig.Provider
+  fallback={<Splash />}
+  errorFallback={(error, retry) => (
+    <div role="alert">
+      <h1>{t("configError.title")}</h1>
+      {error instanceof ConfigError && error.issues && (
+        <ul>
+          {error.issues.map((issue, i) => (
+            <li key={i}>
+              <code>{issue.path?.map(String).join(".")}</code>:{" "}
+              {t(`configError.issue.${issue.path?.map(String).join(".")}`, {
+                defaultValue: issue.message, // untranslated fallback beats silence
+              })}
+            </li>
+          ))}
+        </ul>
+      )}
+      <button onClick={retry}>{t("configError.retry")}</button>
+      {import.meta.env.DEV && <OverrideRecovery />}
+    </div>
+  )}
+>
+  <App />
+</appConfig.Provider>
+```
+
+Load-failure errors (all sources down) have no `issues` — the title +
+retry button is the whole UI for those; don't build copy from
+`error.message` there either, it's a network diagnostic.
+
 ## Serving the config file per environment
 
 A stale config cached at the CDN is the worst incident attunement can cause
@@ -177,6 +220,24 @@ resource "null_resource" "config" {
   }
 }
 ```
+
+### Cache-busting beyond headers
+
+`cache: "no-store"` is the right default, but it only works if every
+intermediary honors it — a corporate proxy or a CDN edge that strips
+`Cache-Control` can still serve a stale file. A build-id query param is a
+second cache key that no intermediary can ignore:
+
+```ts
+// config.ts — BUILD_ID injected at build time (Vite: define, or __COMMIT_SHA__)
+export const appConfig = attuneReact({
+  schema,
+  sources: [fromJson(`/app-config.json?v=${__BUILD_ID__}`)],
+});
+```
+
+Every deploy changes the URL, so a poisoned cache entry can't outlive the
+build that fetched it. No new API needed — `fromJson` takes the URL as-is.
 
 ## Outside the React tree
 
@@ -497,7 +558,59 @@ attunement loads once per instance by design — for mid-session polling, wrap
 your own `setInterval` around a plain `fetch`, or reach for a feature-flag
 service; that's their job.
 
+## Environment-dependent validation
+
+"This config combination is only valid outside production" — a dev/mock
+escape hatch in the schema (`authMode: "mock"`) that must be unreachable once
+the build is a production build. Compose the environment into the schema
+itself with a factory, instead of a second imperative check after validation:
+
+```ts
+// schema.ts
+import { safeUrlOrPath } from "attunement";
+import { z } from "zod";
+
+export function buildSchema({ isProd }: { isProd: boolean }) {
+  return z
+    .object({
+      API_URL: z
+        .string()
+        .refine(safeUrlOrPath, "must be a same-origin path or absolute http(s) URL"),
+      AUTH_MODE: z.enum(["oidc", "mock"]),
+    })
+    .superRefine((config, ctx) => {
+      if (isProd && config.AUTH_MODE === "mock") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["AUTH_MODE"],
+          message: "mock auth must not reach production",
+        });
+      }
+    });
+}
+
+// config.ts
+export const appConfig = attuneReact({
+  schema: buildSchema({ isProd: import.meta.env.PROD }),
+  sources: [fromJson("/app-config.json")],
+});
+```
+
+The guard fails the config load itself — same `ConfigError`, same error
+fallback, no separate code path to forget. `safeUrlOrPath` (exported from
+core) catches the sibling misconfiguration class: a URL value that arrives
+protocol-relative (`//attacker.example.com`) or with a non-http scheme and
+would silently retarget every request built from it.
+
+In tests, pass `isProd` explicitly — `buildSchema({ isProd: false })` for
+fixtures that use the mock escape hatch (see [Testing patterns](#testing-patterns)).
+
 ## Testing patterns
+
+Schemas built with an environment factory
+([Environment-dependent validation](#environment-dependent-validation)) need
+the flag pinned in tests — `buildSchema({ isProd: false })` for fixtures
+that use the mock escape hatch, `{ isProd: true }` to test the guard itself.
 
 ### Baseline fixture (spread pattern)
 

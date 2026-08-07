@@ -413,6 +413,30 @@ export function optional(source: Source): Source {
   };
 }
 
+/**
+ * Refinement predicate for config values that become network targets: accepts
+ * a same-origin path (`/api`) or an absolute http(s) URL, rejects everything
+ * that silently resolves elsewhere — protocol-relative (`//evil.example`,
+ * `/\evil.example` — browsers resolve the backslash form the same way),
+ * non-http schemes (`javascript:`), and bare hostnames (`example.com`, which
+ * fetch would treat as a relative path).
+ *
+ * Compose it into your own schema:
+ *
+ *   API_URL: z.string().refine(safeUrlOrPath, "must be a same-origin path or absolute http(s) URL")
+ */
+export function safeUrlOrPath(value: string): boolean {
+  if (value.startsWith("/")) {
+    return value[1] !== "/" && value[1] !== "\\";
+  }
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 /** Source: read a global injected into index.html (e.g. window.__APP_CONFIG__). */
 export function fromWindow(key: string): Source {
   // indexing globalThis by arbitrary key needs the record shape; TS's

@@ -232,6 +232,7 @@ root.render(
 | `merge(...sources)` | both | Combine sources: parallel, shallow merge, later wins |
 | `optional(source)` | both | Wrap source: nullish or error → skip, don't fail the chain |
 | `ConfigError` | both | Thrown/passed on validation failure; carries per-key issues |
+| `safeUrlOrPath(value)` | both | Refinement predicate for URL-shaped values: same-origin path or absolute http(s) URL; rejects protocol-relative and non-http schemes |
 | `createTestProvider(config, overrides)` | `attunement/testing` | Synchronous Provider for tests — test-only, onReady never runs |
 | `attunement check`, `attunement docs` | bin / `attunement/cli` | Config validation in CI, schema docs; supports `--schema` (Node ≥ 22.18 / tsx) |
 | `AttunementDevtools` / `attunementDevtoolsPlugin(config, options)` | `attunement/devtools` | Dev override panel — dev-only, gate the import; options: `{ storageKey?, fields? }` |
