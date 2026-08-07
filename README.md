@@ -12,7 +12,7 @@
 - **Race-free** — in React nothing renders before config is loaded and valid (Suspense gate); elsewhere `await load()` before bootstrap
 - **Test-ready** — `createTestProvider` gives components config synchronously, no fetch, no mocks
 - **Tooling included** — `attunement check` validates config files in CI, dev override panel (standalone or TanStack Devtools), Vite plugin with reload-on-change
-- **Tiny** — zero dependencies, ~1 kB core, tree-shakable ESM
+- **Tiny** — zero dependencies, ~2 kB gzip core, tree-shakable ESM
 - **Framework-agnostic core** — React 19 adapter included; Angular/Vue/vanilla use the same core ([recipes](./docs/recipes.md#other-frameworks)); multiple independent instances per app
 
 **[Why](#why) · [Install](#install) · [Quick start](#quick-start) · [API](#api) ·
@@ -37,7 +37,7 @@ library is for.
 
 | | Runtime (no rebuild) | Schema validation | Typed config | Blocks render until ready | Tooling | Runtime cost |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
-| **attunement** | ✅ | ✅ any Standard Schema, in the running app | ✅ inferred from schema | ✅ Suspense gate | dev override panel, CI check CLI, Vite plugin | ~1 kB, zero deps |
+| **attunement** | ✅ | ✅ any Standard Schema, in the running app | ✅ inferred from schema | ✅ Suspense gate | dev override panel, CI check CLI, Vite plugin | ~2 kB gzip, zero deps |
 | `import.meta.env` / [import-meta-env](https://github.com/runtime-env/import-meta-env) | ❌ build-time | ⚠️ primitive type check at inject time, nothing at runtime | ✅ generated `.d.ts` | — | editor types | none (build-time) |
 | hand-rolled `window._env_` + `envsubst` | ✅ | ❌ unless you write it | ❌ hand-written | ❌ DIY — a stale or 404'd `env.js` fails silently | ❌ | none |
 | `runtime-env-cra`, `react-inject-env` (dormant since ~2021) | ✅ | ❌ | ❌ | ❌ | ❌ | tiny |
