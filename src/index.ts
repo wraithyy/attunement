@@ -121,7 +121,12 @@ export function formatIssues(
         : "";
     return `  ${path}: ${issue.message}${suggestion}`;
   });
-  return `Invalid runtime config — you didn't say the magic word:\n${lines.join("\n")}`;
+  // the movie quote is dev seasoning — custom fallbacks render this message
+  // to end users, so production builds get the plain version
+  const prefix = DEV
+    ? "Invalid runtime config — you didn't say the magic word:"
+    : "Invalid runtime config:";
+  return `${prefix}\n${lines.join("\n")}`;
 }
 
 /**

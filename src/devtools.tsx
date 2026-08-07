@@ -106,6 +106,13 @@ export function fromOverrides(storageKey = DEFAULT_KEY): Source {
  * are stored — safe to include unconditionally. The default errorFallback
  * shows the same recovery on its own; this export exists for branded or
  * localized fallbacks that replace it.
+ *
+ * Gate the usage on DEV so bundlers can drop the devtools bytes:
+ *
+ *   {import.meta.env.DEV && <OverrideRecovery />}
+ *
+ * Ungated it still renders null in production (no handlers register there),
+ * but the code ships.
  */
 export function OverrideRecovery() {
   const handlers = overridesRegistry();

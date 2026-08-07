@@ -118,6 +118,19 @@ describe("attune", () => {
   });
 });
 
+describe("error message easter egg", () => {
+  // the prod branch (plain "Invalid runtime config:") can't be exercised
+  // here — DEV is a module-init const and import.meta.env is per-module in
+  // vitest; prod elimination of DEV branches is verified on a real
+  // `vite build` instead (see plans/api-wave.md verification)
+  it("keeps the magic word in dev builds", async () => {
+    const message = await attune({ schema, sources: [() => ({ API_URL: 42 })] })
+      .load()
+      .catch((e: Error) => e.message);
+    expect(message).toContain("you didn't say the magic word");
+  });
+});
+
 describe("onReady", () => {
   const source = () => ({ API_URL: "https://x" });
 

@@ -116,14 +116,18 @@ recovery. Keep it by dropping in `OverrideRecovery` (renders nothing when no
 overrides are stored, so it's safe unconditionally):
 
 ```tsx
-import { OverrideRecovery } from "attunement/devtools"; // DEV-gate this import
+import { OverrideRecovery } from "attunement/devtools";
 
 errorFallback={(error, retry) => (
   <ConfigErrorUI error={error} onRetry={retry}>
-    <OverrideRecovery />
+    {import.meta.env.DEV && <OverrideRecovery />}
   </ConfigErrorUI>
 )}
 ```
+
+The static import is fine as long as every use sits behind the DEV gate —
+the bundler then tree-shakes the devtools code out of production. Ungated it
+still renders null in production, just ships the bytes.
 
 ## Serving the config file per environment
 

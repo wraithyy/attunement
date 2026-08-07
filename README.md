@@ -114,10 +114,15 @@ itself. A custom `errorFallback` replaces all of that; drop
 ```tsx
 errorFallback={(error, retry) => (
   <MyBrandedError error={error} onRetry={retry}>
-    <OverrideRecovery />
+    {import.meta.env.DEV && <OverrideRecovery />}
   </MyBrandedError>
 )}
 ```
+
+(The DEV gate lets the bundler drop the devtools bytes — ungated it renders
+null in production, but ships.) For localized error UIs, build the message
+from `error.issues` (`ConfigError` carries the per-key Standard Schema
+issues) rather than rendering `error.message` verbatim.
 
 No React? The core is the same thing minus the Provider — await it before
 bootstrap (Angular `APP_INITIALIZER`, Vue `main.ts` — [recipes](./docs/recipes.md#other-frameworks)):
@@ -406,7 +411,10 @@ config; saving reloads the page (config loads once per page load, so a reload
 is how changes apply). `?config.KEY=value` in the URL bootstraps an override —
 handy for sharing a repro link. If a shared override breaks the load, the
 error fallback offers "Clear overrides and reload", which clears storage and
-strips the `config.*` params so the link can't reseed itself.
+strips the `config.*` params so the link can't reseed itself. (The default
+fallback's recovery *strings* live in the react entry — a few hundred inert
+bytes in production; all override logic stays in `attunement/devtools` and
+never registers there.)
 
 ## CI check
 
